@@ -5,26 +5,19 @@
 {{- if not .Values.persistence.logs.enabled }}{{ $disabled = append $disabled "logs" }}{{ end -}}
 {{- if $disabled }}
 
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !!  WARNING: PERSISTENCE IS DISABLED FOR: {{ join ", " $disabled }}
-  !!
-  !!  These paths are backed by emptyDir and are DELETED whenever the pod is
-  !!  recreated, including on every helm upgrade, node drain or crash:
+WARNING: persistence is disabled for {{ join ", " $disabled }}. These paths are emptyDir
+volumes and are wiped whenever the pod is recreated, including on helm upgrade:
 {{- if not .Values.persistence.world.enabled }}
-  !!    - /terraria/.local/share/Terraria/Worlds   your WORLD FILES
+  /terraria/.local/share/Terraria/Worlds   world files
 {{- end }}
 {{- if not .Values.persistence.config.enabled }}
-  !!    - /terraria/config                         serverconfig.txt, and for TShock
-  !!                                               config.json and tshock.sqlite
-  !!                                               (accounts, groups, bans, regions)
+  /terraria/config                         serverconfig.txt; for TShock also config.json and
+                                           tshock.sqlite (accounts, groups, bans, regions)
 {{- end }}
 {{- if not .Values.persistence.logs.enabled }}
-  !!    - /terraria/logs                           server logs
+  /terraria/logs                           server logs
 {{- end }}
-  !!
-  !!  Only use this for throwaway test servers. To keep your data, set
-  !!    persistence.<name>.enabled: true
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+Use this only for throwaway servers. Set persistence.<name>.enabled=true to keep data.
 {{- end }}
 
 Terraria server "{{ .Release.Name }}" deployed in namespace {{ .Release.Namespace }}.
