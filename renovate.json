@@ -2,6 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
+    "docker:pinDigests",
     "helpers:pinGitHubActionDigests",
     "customManagers:githubActionsVersions"
   ],
@@ -19,7 +20,7 @@
   ],
   "packageRules": [
     {
-      "description": "Debian base image: trixie-slim is a moving tag, so pin and track its digest; follow codename releases",
+      "description": "Debian base image: follow codename releases (digests are pinned for all images via docker:pinDigests)",
       "matchManagers": [
         "dockerfile"
       ],
@@ -27,8 +28,7 @@
         "debian"
       ],
       "versioning": "debian",
-      "groupName": "debian base image",
-      "pinDigests": true
+      "groupName": "debian base image"
     },
     {
       "description": "TShock releases: ignore pre-releases",

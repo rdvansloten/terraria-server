@@ -3,9 +3,8 @@ ARG TSHOCK_SERVER_PATH="/tshock-server"
 ARG CONFIG_PATH="/terraria/config"
 ARG LOG_PATH="/terraria/logs"
 ARG PLUGIN_PATH="/terraria/plugins"
-ARG DOTNET_RUNTIME_VERSION="9.0"
 
-FROM alpine:3.22 AS base
+FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce AS base
 
 # Set values as args so the second stage may inherit
 ARG TARGETARCH
@@ -40,7 +39,7 @@ RUN set -eux; \
     chmod +x "${TSHOCK_SERVER_PATH}/TShock.Server"; \
     rm -rf /tshock.zip /tmp/tshock
 
-FROM mcr.microsoft.com/dotnet/runtime:${DOTNET_RUNTIME_VERSION}
+FROM mcr.microsoft.com/dotnet/runtime:9.0@sha256:647b8b6d4f4570270c763a200514241ca54f8d70dc314000412fbd8ec594724b
 
 # Inherited arguments
 ARG TARGETARCH
