@@ -67,36 +67,38 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
-          {{- if .Values.persistence.world.enabled }}
             - name: terraria-world
               mountPath: /terraria/.local/share/Terraria/Worlds
-          {{- end }}
-          {{- if .Values.persistence.config.enabled }}
             - name: terraria-config
               mountPath: /terraria/config
-          {{- end }}
-          {{- if .Values.persistence.logs.enabled }}
             - name: terraria-logs
               mountPath: /terraria/logs
-          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      # Disabled persistence falls back to emptyDir: data is lost when the pod is recreated
+      # (NOTES.txt warns loudly about this on install and upgrade).
       volumes:
-      {{- if .Values.persistence.world.enabled }}
         - name: terraria-world
+        {{- if .Values.persistence.world.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "terraria-server.fullname" . }}-world
-      {{- end }}
-      {{- if .Values.persistence.config.enabled }}
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
         - name: terraria-config
+        {{- if .Values.persistence.config.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "terraria-server.fullname" . }}-config
-      {{- end }}
-      {{- if .Values.persistence.logs.enabled }}
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
         - name: terraria-logs
+        {{- if .Values.persistence.logs.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "terraria-server.fullname" . }}-logs
-      {{- end }}
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

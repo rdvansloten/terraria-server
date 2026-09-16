@@ -1,0 +1,50 @@
+{{- $fullname := include "terraria-server.fullname" . -}}
+{{- $disabled := list -}}
+{{- if not .Values.persistence.world.enabled }}{{ $disabled = append $disabled "world" }}{{ end -}}
+{{- if not .Values.persistence.config.enabled }}{{ $disabled = append $disabled "config" }}{{ end -}}
+{{- if not .Values.persistence.logs.enabled }}{{ $disabled = append $disabled "logs" }}{{ end -}}
+{{- if $disabled }}
+
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !!  WARNING: PERSISTENCE IS DISABLED FOR: {{ join ", " $disabled }}
+  !!
+  !!  These paths are backed by emptyDir and are DELETED whenever the pod is
+  !!  recreated, including on every helm upgrade, node drain or crash:
+{{- if not .Values.persistence.world.enabled }}
+  !!    - /terraria/.local/share/Terraria/Worlds   your WORLD FILES
+{{- end }}
+{{- if not .Values.persistence.config.enabled }}
+  !!    - /terraria/config                         serverconfig.txt, and for TShock
+  !!                                               config.json and tshock.sqlite
+  !!                                               (accounts, groups, bans, regions)
+{{- end }}
+{{- if not .Values.persistence.logs.enabled }}
+  !!    - /terraria/logs                           server logs
+{{- end }}
+  !!
+  !!  Only use this for throwaway test servers. To keep your data, set
+  !!    persistence.<name>.enabled: true
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+{{- end }}
+
+Terraria server "{{ .Release.Name }}" deployed in namespace {{ .Release.Namespace }}.
+
+  Image:  {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+  World:  /terraria/.local/share/Terraria/Worlds/{{ .Values.terraria.world }}
+{{- if .Values.persistence.world.enabled }}
+  PVCs:   {{ $fullname }}-world{{ if .Values.persistence.config.enabled }}, {{ $fullname }}-config{{ end }}{{ if .Values.persistence.logs.enabled }}, {{ $fullname }}-logs{{ end }}
+{{- end }}
+
+Reach the server:
+{{- if eq .Values.service.type "LoadBalancer" }}
+  kubectl get svc -n {{ .Release.Namespace }} {{ $fullname }} -w   # wait for EXTERNAL-IP, connect on port {{ .Values.service.port }}
+{{- else if eq .Values.service.type "NodePort" }}
+  kubectl get svc -n {{ .Release.Namespace }} {{ $fullname }}      # connect to any node IP on the NodePort
+{{- else if .Values.ingress.traefik.enabled }}
+  via the Traefik TCP entrypoint "{{ .Values.ingress.traefik.entryPoint }}"
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ $fullname }} {{ .Values.service.port }}:{{ .Values.service.port }}
+{{- end }}
+
+Logs:
+  kubectl logs -n {{ .Release.Namespace }} deploy/{{ $fullname }} -f

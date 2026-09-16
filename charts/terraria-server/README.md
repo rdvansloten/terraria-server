@@ -79,6 +79,7 @@ from the chart labels and the removed `PASSWORD` environment variable (which the
 | `terraria.world` | `Terraria.wld` | World file name inside the world volume |
 | `persistence.storageClassName` | `nfs-client` | Default storage class for all PVCs |
 | `persistence.size` | `10Gi` | Default size for all PVCs |
+| `persistence.{world,config,logs}.enabled` | `true` | Disabling falls back to `emptyDir`: data is lost on every pod restart, and the install notes warn about it |
 | `persistence.{world,config,logs}.*` | | Per-volume overrides for class, access modes, size, selector, volumeName |
 | `service.port` | `7777` | Service port |
 | `service.type` | `ClusterIP` | `ClusterIP`, `NodePort` or `LoadBalancer` |
