@@ -1,3 +1,6 @@
 test/
 *cache*
 venv
+.venv
+.task/
+.DS_Store
