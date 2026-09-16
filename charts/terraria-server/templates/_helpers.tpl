@@ -49,3 +49,14 @@ Selector labels
 app.kubernetes.io/name: {{ include "terraria-server.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Config files provided through values, as filename -> content. Empty when nothing is set.
+*/}}
+{{- define "terraria-server.configFiles" -}}
+{{- $files := dict -}}
+{{- with .Values.terraria.config }}{{ $_ := set $files "serverconfig.txt" . }}{{ end -}}
+{{- with .Values.tshock.config }}{{ $_ := set $files "config.json" . }}{{ end -}}
+{{- with .Values.tshock.sscConfig }}{{ $_ := set $files "sscconfig.json" . }}{{ end -}}
+{{- toYaml $files -}}
+{{- end }}

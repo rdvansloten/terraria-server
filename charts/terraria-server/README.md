@@ -15,10 +15,17 @@ Any other objects you need (for example for a different ingress controller) go i
 | `serverconfig.txt` | `/terraria/config` | `<fullname>-config` |
 | Server logs | `/terraria/logs` | `<fullname>-logs` |
 
-The server reads its settings (password, max players, port, difficulty, ...) from
-`serverconfig.txt` on the config volume. The `terraria.*` values are exposed as environment
-variables for compatibility but the image does not read them; edit `serverconfig.txt` instead.
-The image runs as user `terraria` (uid/gid 999), so `podSecurityContext.fsGroup` defaults to 999.
+Gameplay settings (password, max players, port, ...) come from `serverconfig.txt` on the config
+volume, or `config.json` for TShock. The image runs as user `terraria` (uid/gid 999), so
+`podSecurityContext.fsGroup` defaults to 999.
+
+## Worlds
+
+By default a medium world named after `terraria.world` is generated on first start
+(`terraria.autocreate: 2`, with `terraria.seed` and `terraria.difficulty`). To bring your own
+`.wld` instead, install with `terraria.waitForWorld: true`: the pod waits, the install notes print
+the exact `kubectl cp` command, and the server starts once the copy is complete. The world then
+lives on the persistent volume, so `waitForWorld` can stay on.
 
 ## Exposing the server
 
@@ -49,6 +56,25 @@ extraObjects:
       "7777": "{{ .Release.Namespace }}/{{ include \"terraria-server.fullname\" . }}:7777"
 ```
 
+## Server configuration
+
+Set `terraria.config` to the contents of `serverconfig.txt`, or for the TShock image
+`tshock.config` (`config.json`) and `tshock.sscConfig` (`sscconfig.json`):
+
+```yaml
+terraria:
+  config: |
+    maxplayers=8
+    port=7777
+    password=changeme
+    motd=Welcome to Terraria!
+```
+
+The files are stored in a ConfigMap and copied onto the config volume by an init container on
+every start, so they stay writable for the server and your values win over edits made on the
+volume. Changing them triggers a rollout. When left empty, nothing on the volume is touched,
+except that the image's default `serverconfig.txt` is seeded once if the volume has none.
+
 ## Install
 
 ```bash
@@ -77,6 +103,11 @@ from the chart labels and the removed `PASSWORD` environment variable (which the
 | `image.tag` | `"1458"` | Image tag, i.e. Terraria 1.4.5.8. Falls back to `appVersion` |
 | `image.pullPolicy` | `Always` | Pull policy |
 | `terraria.world` | `Terraria.wld` | World file name inside the world volume |
+| `terraria.autocreate` | `2` | Generate a world of this size (1/2/3) when none exists; empty disables |
+| `terraria.seed`, `terraria.difficulty` | `""`, `0` | Parameters for the generated world |
+| `terraria.waitForWorld` | `false` | Wait for a world file to be copied in instead of generating one |
+| `terraria.config` | `""` | Contents of `serverconfig.txt`, written to the config volume on every start |
+| `tshock.config`, `tshock.sscConfig` | `""` | Contents of TShock's `config.json` / `sscconfig.json` |
 | `persistence.storageClassName` | `nfs-client` | Default storage class for all PVCs |
 | `persistence.size` | `10Gi` | Default size for all PVCs |
 | `persistence.{world,config,logs}.enabled` | `true` | Disabling falls back to `emptyDir`: data is lost on every pod restart, and the install notes warn about it |

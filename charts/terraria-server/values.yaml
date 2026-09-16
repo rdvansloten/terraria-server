@@ -8,22 +8,44 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# Terraria server configuration
+# Terraria server configuration.
+# Gameplay settings such as password, max players and port come from serverconfig.txt on the
+# config volume (or TShock's config.json), not from here.
 terraria:
-  # World name
+  # World file name inside the world volume
   world: "Terraria.wld"
-  # Server password (leave empty for no password)
-  password: ""
-  # Max players
-  maxPlayers: 10
-  # Server port
+  # Container port the server listens on
   port: 7777
-  # Difficulty (0=Classic, 1=Expert, 2=Master, 3=Journey)
-  difficulty: 0
-  # Generate world if it doesn't exist
+  # Generate a world when none exists: 1 = small, 2 = medium, 3 = large. Empty disables it.
   autocreate: 2
-  # World seed (optional)
+  # Seed for the generated world (optional)
   seed: ""
+  # Difficulty of the generated world: 0 = Classic, 1 = Expert, 2 = Master, 3 = Journey
+  difficulty: 0
+  # Instead of generating a world, keep the pod waiting until a world file is copied in.
+  # The install notes print the kubectl cp command. Safe to leave on: once the world is on the
+  # volume the server starts normally.
+  waitForWorld: false
+  # Contents of serverconfig.txt (vanilla image). When set, the file is written to the config
+  # volume on every start, so changes here win over edits made on the volume. When empty, the
+  # image default is seeded once if the volume has no serverconfig.txt yet.
+  # config: |
+  #   maxplayers=8
+  #   port=7777
+  #   password=changeme
+  #   motd=Welcome to Terraria!
+  #   secure=1
+  #   language=en-US
+  config: ""
+
+# TShock image only (image.tag: tshock-*). Same semantics as terraria.config: when set, the
+# file is written to the config volume on every start. Leave empty to let TShock generate and
+# manage its own config.json / sscconfig.json.
+tshock:
+  # Contents of config.json
+  config: ""
+  # Contents of sscconfig.json (server side characters)
+  sscConfig: ""
 
 # Storage for world data, config, and logs.
 # Disabling any of these backs the path with an emptyDir that is wiped whenever the pod is

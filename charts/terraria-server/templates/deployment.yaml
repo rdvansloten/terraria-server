@@ -15,6 +15,11 @@ spec:
     metadata:
       labels:
         {{- include "terraria-server.selectorLabels" . | nindent 8 }}
+      {{- $files := include "terraria-server.configFiles" . | fromYaml }}
+      {{- if $files }}
+      annotations:
+        checksum/config: {{ $files | toYaml | sha256sum }}
+      {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -22,8 +27,36 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if .Values.persistence.world.enabled }}
       initContainers:
+        # Seed or manage files on the config volume. With values-provided config the files are
+        # (over)written on every start; otherwise the image default serverconfig.txt is copied
+        # only if the volume has none yet (TShock generates its own config).
+        - name: config
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              {{- $files := include "terraria-server.configFiles" . | fromYaml }}
+              {{- range $name, $_ := $files }}
+              cp /values-config/{{ $name }} /config/{{ $name }} && echo "wrote {{ $name }} from values"
+              {{- end }}
+              if [ ! -f /config/serverconfig.txt ] && [ -f /terraria/config/serverconfig.txt ]; then
+                cp /terraria/config/serverconfig.txt /config/serverconfig.txt && echo "seeded default serverconfig.txt"
+              fi
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: terraria-config
+              mountPath: /config
+            {{- if $files }}
+            - name: values-config
+              mountPath: /values-config
+              readOnly: true
+            {{- end }}
+      {{- if .Values.persistence.world.enabled }}
         - name: set-permissions
           image: busybox
           command: ["sh", "-c", "chown -R 999:999 /terraria/.local/share/Terraria/Worlds && chmod -R 770 /terraria/.local/share/Terraria/Worlds"]
@@ -46,24 +79,20 @@ spec:
           env:
             - name: WORLD_FILENAME
               value: "{{ .Values.terraria.world }}"
-            {{- if .Values.terraria.password }}
-            - name: PASSWORD
-              value: "{{ .Values.terraria.password }}"
+            {{- if .Values.terraria.waitForWorld }}
+            - name: WAIT_FOR_WORLD
+              value: "true"
             {{- end }}
-            - name: MAXPLAYERS
-              value: "{{ .Values.terraria.maxPlayers }}"
-            - name: PORT
-              value: "{{ .Values.terraria.port }}"
-            - name: DIFFICULTY
-              value: "{{ .Values.terraria.difficulty }}"
+            {{- if .Values.terraria.autocreate }}
             - name: AUTOCREATE
               value: "{{ .Values.terraria.autocreate }}"
+            - name: DIFFICULTY
+              value: "{{ .Values.terraria.difficulty }}"
             {{- if .Values.terraria.seed }}
             - name: SEED
               value: "{{ .Values.terraria.seed }}"
             {{- end }}
-            - name: DOTNET_BUNDLE_EXTRACT_BASE_DIR
-              value: "/tmp"
+            {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
@@ -98,6 +127,11 @@ spec:
             claimName: {{ include "terraria-server.fullname" . }}-logs
         {{- else }}
           emptyDir: {}
+        {{- end }}
+        {{- if include "terraria-server.configFiles" . | fromYaml }}
+        - name: values-config
+          configMap:
+            name: {{ include "terraria-server.fullname" . }}-config
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

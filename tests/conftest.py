@@ -90,9 +90,30 @@ class Server:
         result = docker("inspect", "-f", "{{.State.Running}}", self.name, check=False)
         return result.stdout.strip() == "true"
 
+    def exit_code(self) -> int:
+        return int(docker("inspect", "-f", "{{.State.ExitCode}}", self.name).stdout.strip())
+
+    def wait_for_exit(self, timeout: int) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not self.is_running():
+                return True
+            time.sleep(1)
+        return False
+
+    def read_file(self, path: str) -> bytes:
+        return subprocess.run(["docker", "exec", self.name, "cat", path], capture_output=True, check=True).stdout
+
+    def write_file(self, path: str, data: bytes) -> None:
+        """Write a file as the container user, like kubectl cp does."""
+        subprocess.run(["docker", "exec", "-i", self.name, "sh", "-c", f"cat > '{path}'"], input=data, check=True)
+
 
 def _host_port(name: str) -> tuple[str, int]:
-    out = docker("port", name, f"{SERVER_PORT}/tcp").stdout.strip().splitlines()
+    result = docker("port", name, f"{SERVER_PORT}/tcp", check=False)
+    out = result.stdout.strip().splitlines()
+    if result.returncode != 0 or not out:
+        return "127.0.0.1", 0  # container already exited; there is no mapping to report
     for line in out:
         host, _, port = line.rpartition(":")
         if "." in host:  # prefer the IPv4 binding
@@ -101,22 +122,30 @@ def _host_port(name: str) -> tuple[str, int]:
     return host.strip("[]"), int(port)
 
 
-@pytest.fixture(scope="session")
-def server(request: pytest.FixtureRequest) -> Server:
-    image = request.config.getoption("--image")
-    platform = request.config.getoption("--platform")
-    timeout = request.config.getoption("--startup-timeout")
+def start_container(config: pytest.Config, env: dict[str, str], extra_args: list[str] | None = None) -> Server:
+    """Start the image under test with the given environment and return a handle."""
+    image = config.getoption("--image")
+    platform = config.getoption("--platform")
     name = f"terraria-test-{uuid.uuid4().hex[:8]}"
 
-    run_args = ["run", "-d", "--name", name, "-p", f"127.0.0.1::{SERVER_PORT}", "-e", "TEST_MODE=true"]
+    run_args = ["run", "-d", "--name", name, "-p", f"127.0.0.1::{SERVER_PORT}"]
+    for key, value in env.items():
+        run_args += ["-e", f"{key}={value}"]
     if platform:
         run_args += ["--platform", platform]
+    run_args += extra_args or []
     run_args.append(image)
     docker(*run_args, timeout=600)
 
     host, port = _host_port(name)
-    srv = Server(name=name, image=image, host=host, port=port)
+    return Server(name=name, image=image, host=host, port=port)
 
+
+@pytest.fixture(scope="session")
+def server(request: pytest.FixtureRequest) -> Server:
+    """A server started in TEST_MODE that has finished generating a world and is listening."""
+    timeout = request.config.getoption("--startup-timeout")
+    srv = start_container(request.config, {"TEST_MODE": "true"})
     try:
         if not srv.wait_for_log(re.escape(LISTENING_PATTERN), timeout):
             pytest.fail(
@@ -126,5 +155,23 @@ def server(request: pytest.FixtureRequest) -> Server:
         yield srv
     finally:
         if request.session.testsfailed:
-            print(f"\n--- container logs ({name}) ---\n{srv.logs()}")
-        docker("rm", "-f", name, check=False)
+            print(f"\n--- container logs ({srv.name}) ---\n{srv.logs()}")
+        docker("rm", "-f", srv.name, check=False)
+
+
+@pytest.fixture
+def run_server(request: pytest.FixtureRequest):
+    """Factory for additional short-lived containers; everything started is removed afterwards."""
+    started: list[Server] = []
+
+    def _run(env: dict[str, str], extra_args: list[str] | None = None) -> Server:
+        srv = start_container(request.config, env, extra_args)
+        started.append(srv)
+        return srv
+
+    yield _run
+
+    for srv in started:
+        if request.session.testsfailed:
+            print(f"\n--- container logs ({srv.name}) ---\n{srv.logs()}")
+        docker("rm", "-f", srv.name, check=False)

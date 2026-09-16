@@ -28,6 +28,20 @@ Terraria server "{{ .Release.Name }}" deployed in namespace {{ .Release.Namespac
   PVCs:   {{ $fullname }}-world{{ if .Values.persistence.config.enabled }}, {{ $fullname }}-config{{ end }}{{ if .Values.persistence.logs.enabled }}, {{ $fullname }}-logs{{ end }}
 {{- end }}
 
+{{- if .Values.terraria.waitForWorld }}
+
+The server is waiting for a world file (terraria.waitForWorld=true). Import yours with:
+
+  kubectl cp ./MyWorld.wld {{ .Release.Namespace }}/$(kubectl get pod -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/name={{ include "terraria-server.name" . }} -o jsonpath='{.items[0].metadata.name}'):/terraria/.local/share/Terraria/Worlds/{{ .Values.terraria.world }}
+
+The server starts as soon as the copy finishes. The world is on the persistent volume, so
+later restarts load it directly even with waitForWorld left on.
+{{- else if .Values.terraria.autocreate }}
+
+A {{ if eq (int .Values.terraria.autocreate) 1 }}small{{ else if eq (int .Values.terraria.autocreate) 2 }}medium{{ else }}large{{ end }} world is generated on first start if none exists. To import an existing
+world instead, install with terraria.waitForWorld=true and follow the printed kubectl cp command.
+{{- end }}
+
 Reach the server:
 {{- if eq .Values.service.type "LoadBalancer" }}
   kubectl get svc -n {{ .Release.Namespace }} {{ $fullname }} -w   # wait for EXTERNAL-IP, connect on port {{ .Values.service.port }}
