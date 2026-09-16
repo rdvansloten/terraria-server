@@ -1,0 +1,90 @@
+{{- if .Values.persistence.world.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "terraria-server.fullname" . }}-world
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "terraria-server.labels" . | nindent 4 }}
+  {{- with .Values.persistence.world.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  storageClassName: {{ .Values.persistence.world.storageClassName | default .Values.persistence.storageClassName }}
+  accessModes:
+    {{- range .Values.persistence.world.accessModes | default (list .Values.persistence.accessMode) }}
+    - {{ . }}
+    {{- end }}
+  {{- with .Values.persistence.world.selector }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.persistence.world.volumeName }}
+  volumeName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.world.size | default .Values.persistence.size }}
+{{- if .Values.persistence.config.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "terraria-server.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "terraria-server.labels" . | nindent 4 }}
+  {{- with .Values.persistence.config.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  storageClassName: {{ .Values.persistence.config.storageClassName | default .Values.persistence.storageClassName }}
+  accessModes:
+    {{- range .Values.persistence.config.accessModes | default (list .Values.persistence.accessMode) }}
+    - {{ . }}
+    {{- end }}
+  {{- with .Values.persistence.config.selector }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.persistence.config.volumeName }}
+  volumeName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.config.size | default .Values.persistence.size }}
+{{- end }}
+{{- if .Values.persistence.logs.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "terraria-server.fullname" . }}-logs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "terraria-server.labels" . | nindent 4 }}
+  {{- with .Values.persistence.logs.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  storageClassName: {{ .Values.persistence.logs.storageClassName | default .Values.persistence.storageClassName }}
+  accessModes:
+    {{- range .Values.persistence.logs.accessModes | default (list .Values.persistence.accessMode) }}
+    - {{ . }}
+    {{- end }}
+  {{- with .Values.persistence.logs.selector }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.persistence.logs.volumeName }}
+  volumeName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.logs.size | default .Values.persistence.size }}
+{{- end }}
+{{- end }}

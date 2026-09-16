@@ -1,0 +1,15 @@
+{{- if .Values.ingress.nginx.enabled }}
+{{- /*
+ingress-nginx exposes raw TCP through a ConfigMap referenced by --tcp-services-configmap.
+Each entry maps an external port to <namespace>/<service>:<port>[:PROXY[:PROXY]].
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.ingress.nginx.configMapName }}
+  namespace: {{ .Values.ingress.nginx.namespace }}
+  labels:
+    {{- include "terraria-server.labels" . | nindent 4 }}
+data:
+  {{ .Values.ingress.nginx.externalPort | quote }}: {{ printf "%s/%s:%v%s" .Release.Namespace (include "terraria-server.fullname" .) .Values.service.port (ternary "::PROXY" "" .Values.ingress.nginx.proxyProtocol) | quote }}
+{{- end }}
