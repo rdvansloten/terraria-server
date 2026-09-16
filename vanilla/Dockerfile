@@ -1,4 +1,4 @@
-ARG TERRARIA_SERVER_VERSION="1451"
+ARG TERRARIA_SERVER_VERSION="1458"
 ARG TERRARIA_SERVER_PATH="/terraria-server"
 ARG CONFIG_PATH="/terraria/config"
 ARG CONFIG_FILENAME="serverconfig.txt"
@@ -7,7 +7,6 @@ ARG ADDITIONAL_ARGS
 
 FROM debian:trixie-slim AS base
 
-# Set values as args so the second stage may inherit
 ARG TERRARIA_SERVER_VERSION
 ARG TERRARIA_SERVER_FILENAME="terraria-server-${TERRARIA_SERVER_VERSION}.zip"
 ARG TERRARIA_SERVER_URL="https://terraria.org/api/download/pc-dedicated-server/${TERRARIA_SERVER_FILENAME}"
@@ -30,9 +29,6 @@ RUN unzip "/$TERRARIA_SERVER_FILENAME" -d "/tmp/terraria/" \
 # Copy serverconfig from repository config folder
 COPY config/${CONFIG_FILENAME} ${CONFIG_PATH}/${CONFIG_FILENAME}
 
-# Calculate MD5 of modified serverconfig and save to file for later use
-RUN md5sum "${CONFIG_PATH}/${CONFIG_FILENAME}" | cut -d' ' -f1 > "${CONFIG_PATH}/default-serverconfig.md5"
-
 FROM debian:trixie-slim
 
 # Inherited arguments
@@ -44,12 +40,12 @@ ARG CONFIG_FILENAME
 ARG LOG_PATH
 ARG ADDITIONAL_ARGS
 
-# Container labels
-LABEL org.opencontainers.image.authors="Ryan Sheehan <rsheehan@gmail.com>"
-LABEL org.opencontainers.image.url="https://hub.docker.com/r/ryshe/terraria"
-LABEL org.opencontainers.image.documentation="Container image for Terraria Server."
-LABEL org.opencontainers.image.source="https://github.com/ryansheehan/terraria/blob/master/vanilla/Dockerfile"
 LABEL org.opencontainers.image.version="$TERRARIA_SERVER_VERSION"
+LABEL org.opencontainers.image.authors="R.D. van Sloten <rdvansloten@outlook.com>"
+LABEL org.opencontainers.image.documentation="Container image for Terraria Server."
+LABEL org.opencontainers.image.url="https://hub.docker.com/r/rdvansloten/terraria-server"
+LABEL org.opencontainers.image.source="https://github.com/rdvansloten/terraria-server/blob/main/vanilla/Dockerfile"
+
 
 # Environment variables
 ENV TERRARIA_SERVER_PATH="$TERRARIA_SERVER_PATH"
@@ -64,8 +60,8 @@ ENV ADDITIONAL_ARGS="$ADDITIONAL_ARGS"
 
 # Add terraria user and group to prevent needing to run the server as root (dangerous)
 RUN groupadd -r terraria \
-    && useradd -u 999 -r -g terraria -d "$TERRARIA_SERVER_PATH" -s /bin/sh terraria \
-    && mkdir -p "$TERRARIA_SERVER_PATH" "${TERRARIA_SERVER_PATH}/${DEFAULT_TERRARIA_SERVER_PATH}" "$CONFIG_PATH" "$LOG_PATH"
+    && useradd -u 999 -r -g terraria -d "/terraria" -s /bin/sh terraria \
+    && mkdir -p "$TERRARIA_SERVER_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds" "$CONFIG_PATH" "$LOG_PATH"
 
 # Copy files from previous stage and repository
 COPY --from=base --chown=terraria:terraria --chmod=0550 "${TERRARIA_SERVER_PATH}/" "${TERRARIA_SERVER_PATH}/"
@@ -73,13 +69,13 @@ COPY --from=base --chown=terraria:terraria --chmod=0550 "${CONFIG_PATH}/" "${CON
 COPY --chown=terraria:terraria --chmod=0550 "$ENTRYPOINT" "${TERRARIA_SERVER_PATH}/${ENTRYPOINT}"
 
 # Make terraria user owner over relevant paths
-RUN chown -R terraria:terraria "$LOG_PATH" "$TERRARIA_SERVER_PATH" "$CONFIG_PATH" \
-    && chmod -R 770 "$LOG_PATH" "${TERRARIA_SERVER_PATH}/${DEFAULT_TERRARIA_SERVER_PATH}" \
+RUN chown -R terraria:terraria "/terraria" "$TERRARIA_SERVER_PATH" \
+    && chmod -R 770 "$LOG_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}" \
     && chmod -R 750 "$CONFIG_PATH"
 
 # Only install mono libraries output by `monodis --assemblyref TerrariaServer.exe`
 # Reduces size by 40% compared to installing package 'mono-runtime'
-RUN if [ "${TARGETARCH}" = "arm64" ] || [ "${TARGETARCH}" = "arm" ] then \
+RUN if [ "${TARGETARCH}" = "arm64" ] || [ "${TARGETARCH}" = "arm" ]; then \
         apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
         ca-certificates \
         mono-runtime-common \

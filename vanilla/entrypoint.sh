@@ -7,7 +7,7 @@ else
   SERVER_BINARY="./TerrariaServer"
 fi
 
-WORLD_PATH="${TERRARIA_SERVER_PATH}/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds/${WORLD_FILENAME}"
+WORLD_PATH="/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds/${WORLD_FILENAME}"
 
 # Print server information
 printf "Server binary : %s\n" "$SERVER_BINARY"
@@ -16,23 +16,13 @@ printf "World file    : %s\n" "$WORLD_PATH"
 printf "Log path      : %s\n" "$LOG_PATH"
 printf "Config file   : %s\n" "${CONFIG_PATH}/${CONFIG_FILENAME}"
 
-# Check if the config file is the default by comparing MD5
-DEFAULT_MD5=$(cat "${CONFIG_PATH}/default-serverconfig.md5")
-CURRENT_MD5=$(md5sum "${CONFIG_PATH}/${CONFIG_FILENAME}" | cut -d' ' -f1)
-
-if [ "$DEFAULT_MD5" = "$CURRENT_MD5" ]; then
-  printf "Warning: Using default server configuration (MD5: %s)\n" "$DEFAULT_MD5"
-else
-  printf "Using non-default server configuration (%s)\n" "$CONFIG_PATH/$CONFIG_FILENAME"
-fi
-
 # Check if password is empty in any config
 if grep -q "^password=$\|^password=\"\"$" "${CONFIG_PATH}/${CONFIG_FILENAME}"; then
   printf "Warning: Server password is not set in your configuration file!\n"
 fi
 
 if [ $# -gt 0 ]; then
-  echo "Running terraria-server with arguments: %s\n" "$@"
+  echo "Running terraria-server with additional arguments: %s\n" "$@"
 fi  
 
 if [ -f "$WORLD_PATH" ]; then
