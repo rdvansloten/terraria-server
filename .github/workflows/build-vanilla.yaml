@@ -2,17 +2,10 @@ name: Build vanilla image
 
 # Builds the multi-arch image once into a throwaway registry on the runner, tests every
 # platform from it with the pytest suite, and only pushes the tested manifest to Docker Hub
-# on main. Also callable from auto-update-vanilla.yaml with an explicit version.
+# on main. Terraria version bumps arrive as Renovate pull requests.
 
 on:
   workflow_dispatch:
-  workflow_call:
-    inputs:
-      version:
-        description: Terraria server version to build, e.g. 1458 (default is the ARG in the Dockerfile)
-        type: string
-        required: false
-        default: ""
   pull_request:
     paths:
       - images/vanilla/**
@@ -46,15 +39,10 @@ jobs:
       - name: Checkout self
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - name: Determine the version
+      - name: Read the version from the Dockerfile
         id: version
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          version="$INPUT_VERSION"
-          if [ -z "$version" ]; then
-            version="$(awk -F= -v arg="ARG $VERSION_ARG" '$1 == arg { gsub(/"/, "", $2); print $2; exit }' "$BUILD_CONTEXT/Dockerfile")"
-          fi
+          version="$(awk -F= -v arg="ARG $VERSION_ARG" '$1 == arg { gsub(/"/, "", $2); print $2; exit }' "$BUILD_CONTEXT/Dockerfile")"
           test -n "$version" || { echo "::error::could not read ARG $VERSION_ARG from $BUILD_CONTEXT/Dockerfile"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
           # 1458 -> 1.4.5.8
@@ -92,14 +80,11 @@ jobs:
               http = true
 
       - name: Build all platforms into the build registry
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
           docker buildx build "$BUILD_CONTEXT" \
             --pull \
             --network host \
             --platform "$PLATFORMS" \
-            --build-arg "$VERSION_ARG=$VERSION" \
             --tag "$BUILD_REGISTRY/$REPOSITORY:candidate" \
             --push
 

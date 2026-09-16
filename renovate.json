@@ -44,6 +44,19 @@
       ],
       "pinDigests": true,
       "groupName": "github actions"
+    },
+    {
+      "description": ".NET runtime major follows TShock's requirement (currently net9.0), not Renovate",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "mcr.microsoft.com/dotnet/runtime"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
     }
   ],
   "customManagers": [
@@ -59,6 +72,28 @@
       "depNameTemplate": "Pryaxis/TShock",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver-coerced"
+    },
+    {
+      "description": "Track Terraria dedicated server releases for ARG TERRARIA_SERVER_VERSION in images/vanilla/Dockerfile",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^images/vanilla/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "ARG TERRARIA_SERVER_VERSION=\"(?<currentValue>\\d+)\""
+      ],
+      "depNameTemplate": "terraria-server",
+      "datasourceTemplate": "custom.terraria-server",
+      "versioningTemplate": "loose"
     }
-  ]
+  ],
+  "customDatasources": {
+    "terraria-server": {
+      "defaultRegistryUrlTemplate": "https://terraria.org/api/get/dedicated-servers-names",
+      "format": "json",
+      "transformTemplates": [
+        "{ \"releases\": $map($, function($v) { { \"version\": $replace($v, /^terraria-server-(\\d+)\\.zip$/, \"$1\") } }), \"homepage\": \"https://terraria.org\", \"sourceUrl\": \"https://terraria.org/api/download/pc-dedicated-server\" }"
+      ]
+    }
+  }
 }

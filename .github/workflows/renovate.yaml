@@ -1,0 +1,80 @@
+name: Renovate
+
+# Self-hosted Renovate running the official image. It authenticates as a GitHub App so the
+# pull requests it opens trigger the build workflows (PRs from GITHUB_TOKEN would not) and
+# so it may update pinned actions under .github/workflows.
+#
+# Required repository configuration:
+#   vars.RENOVATE_APP_ID              client id of a GitHub App installed on this repo with
+#                                     Contents, Pull requests and Workflows: read & write
+#   secrets.RENOVATE_APP_PRIVATE_KEY  the app's private key
+#   secrets.DOCKER_USERNAME / DOCKER_PASSWORD   Docker Hub credentials (also used to push images)
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: Log level
+        type: choice
+        options: [info, debug]
+        default: info
+      dryRun:
+        description: Dry run (no branches or PRs are created)
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+    paths:
+      - renovate.json
+      - .github/renovate.config.js
+      - .github/workflows/renovate.yaml
+
+env:
+  # renovate: datasource=docker depName=renovate/renovate
+  RENOVATE_VERSION: 44.93.7
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Get Renovate token
+        id: renovate_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RENOVATE_APP_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+
+      - name: Resolve the app's bot identity
+        id: identity
+        env:
+          GH_TOKEN: ${{ steps.renovate_token.outputs.token }}
+          APP_SLUG: ${{ steps.renovate_token.outputs.app-slug }}
+        run: |
+          user_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
+          echo "username=${APP_SLUG}[bot]" >> "$GITHUB_OUTPUT"
+          echo "git_author=${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout self
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@dcfba84a42d1b5d5e49bf131b1bf53511851a123 # v46.3.1
+        with:
+          configurationFile: .github/renovate.config.js
+          renovate-version: ${{ env.RENOVATE_VERSION }}
+          token: "x-access-token:${{ steps.renovate_token.outputs.token }}"
+        env:
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+          RENOVATE_DRY_RUN: ${{ inputs.dryRun && 'full' || '' }}
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_USERNAME: ${{ steps.identity.outputs.username }}
+          RENOVATE_GIT_AUTHOR: ${{ steps.identity.outputs.git_author }}
+          RENOVATE_PR_HOURLY_LIMIT: 0
+          RENOVATE_PR_CONCURRENT_LIMIT: 0
+          RENOVATE_DOCKERHUB_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          RENOVATE_DOCKERHUB_TOKEN: ${{ secrets.DOCKER_PASSWORD }}
