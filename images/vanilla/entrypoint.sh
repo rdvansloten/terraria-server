@@ -26,8 +26,19 @@ printf "Config file   : %s\n" "${CONFIG_PATH}/${CONFIG_FILENAME}"
 printf "Autocreate    : %s\n" "${AUTOCREATE:-off}"
 printf "Wait for world: %s\n" "${WAIT_FOR_WORLD:-false}"
 
+# Seed the default config when the config directory (usually a mounted volume) has none yet
+CONFIG_FILE="${CONFIG_PATH}/${CONFIG_FILENAME}"
+if [ ! -f "$CONFIG_FILE" ]; then
+  if cp "${TERRARIA_SERVER_PATH}/${CONFIG_FILENAME}.default" "$CONFIG_FILE" 2>/dev/null; then
+    printf "No %s found in %s, seeded the default. Edit it and restart to apply changes.\n" "$CONFIG_FILENAME" "$CONFIG_PATH"
+  else
+    printf "Warning: no %s in %s and the directory is not writable by uid %s, so the server\n" "$CONFIG_FILENAME" "$CONFIG_PATH" "$(id -u)"
+    printf "Warning: runs with built-in defaults. Fix with: chown 999 <host folder>  (or chmod 777).\n"
+  fi
+fi
+
 # Check if password is empty in any config
-if grep -q "^password=$\|^password=\"\"$" "${CONFIG_PATH}/${CONFIG_FILENAME}"; then
+if grep -q "^password=$\|^password=\"\"$" "$CONFIG_FILE"; then
   printf "Warning: Server password is not set in your configuration file!\n"
 fi
 

@@ -91,3 +91,32 @@ def test_existing_world_is_not_overwritten_by_autocreate(server: Server, run_ser
 def srv_id() -> str:
     import uuid
     return uuid.uuid4().hex[:8]
+
+
+@pytest.mark.flavor("vanilla")
+def test_empty_config_folder_is_seeded_with_default(run_server, startup_timeout: int, tmp_path) -> None:
+    """Bind-mounting an empty host folder at /terraria/config (the README quick start) must not
+    silently drop the default config; the entrypoint seeds it so the user has a file to edit."""
+    import os
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    os.chmod(config_dir, 0o777)  # the container runs as uid 999, which is not the host user
+    srv: Server = run_server({"AUTOCREATE": "1"}, ["-v", f"{config_dir}:/terraria/config"])
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    assert "No serverconfig.txt found in /terraria/config, seeded the default." in srv.logs()
+    seeded = (config_dir / "serverconfig.txt").read_text()
+    assert "maxplayers=8" in seeded and "port=7777" in seeded
+
+
+@pytest.mark.flavor("vanilla")
+def test_existing_config_is_not_overwritten(run_server, startup_timeout: int, tmp_path) -> None:
+    """Second start with a user-edited config: the file is used as-is."""
+    import os
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    os.chmod(config_dir, 0o777)
+    (config_dir / "serverconfig.txt").write_text("maxplayers=3\nport=7777\nmotd=custom motd\n")
+    srv: Server = run_server({"AUTOCREATE": "1"}, ["-v", f"{config_dir}:/terraria/config"])
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    assert "seeded the default" not in srv.logs()
+    assert (config_dir / "serverconfig.txt").read_text() == "maxplayers=3\nport=7777\nmotd=custom motd\n"

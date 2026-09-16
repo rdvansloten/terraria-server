@@ -63,15 +63,18 @@ RUN groupadd -r terraria \
     && useradd -u 999 -r -g terraria -d "/terraria" -s /bin/sh terraria \
     && mkdir -p "$TERRARIA_SERVER_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds" "$CONFIG_PATH" "$LOG_PATH"
 
-# Copy files from previous stage and repository
+# Copy files from previous stage and repository. The default serverconfig.txt is also kept
+# next to the server binaries so the entrypoint can seed it into CONFIG_PATH when a volume
+# mounted there is empty.
 COPY --from=base --chown=terraria:terraria --chmod=0550 "${TERRARIA_SERVER_PATH}/" "${TERRARIA_SERVER_PATH}/"
 COPY --from=base --chown=terraria:terraria --chmod=0550 "${CONFIG_PATH}/" "${CONFIG_PATH}/"
+COPY --from=base --chown=terraria:terraria --chmod=0440 "${CONFIG_PATH}/${CONFIG_FILENAME}" "${TERRARIA_SERVER_PATH}/${CONFIG_FILENAME}.default"
 COPY --chown=terraria:terraria --chmod=0550 "$ENTRYPOINT" "${TERRARIA_SERVER_PATH}/${ENTRYPOINT}"
 
 # Make terraria user owner over relevant paths
 RUN chown -R terraria:terraria "/terraria" "$TERRARIA_SERVER_PATH" \
     && chmod -R 770 "$LOG_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}" \
-    && chmod -R 750 "$CONFIG_PATH"
+    && chmod -R 770 "$CONFIG_PATH"
 
 # Only install mono libraries output by `monodis --assemblyref TerrariaServer.exe`
 # Reduces size by 40% compared to installing package 'mono-runtime'
