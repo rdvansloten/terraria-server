@@ -100,7 +100,7 @@ from the chart labels and the removed `PASSWORD` environment variable (which the
 | Key | Default | Description |
 |-----|---------|-------------|
 | `image.repository` | `docker.io/rdvansloten/terraria-server` | Image repository |
-| `image.tag` | `"1458"` | Image tag, i.e. Terraria 1.4.5.8. Falls back to `appVersion` |
+| `image.tag` | `"1458"` | Image tag. Vanilla by default; use `<version>-tshock` (see the commented example in values.yaml) for TShock. Both are kept current by Renovate |
 | `image.pullPolicy` | `Always` | Pull policy |
 | `terraria.world` | `Terraria.wld` | World file name inside the world volume |
 | `terraria.autocreate` | `2` | Generate a world of this size (1/2/3) when none exists; empty disables |

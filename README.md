@@ -7,8 +7,8 @@ for `linux/amd64`, `linux/arm64` and `linux/arm/v7`.
 
 | Flavor  | Directory                           | Tags                            | Notes                                                         |
 | ------- | ----------------------------------- | ------------------------------- | ------------------------------------------------------------- |
-| Vanilla | [`images/vanilla/`](images/vanilla) | `1458`, `1.4.5.8`, `latest`     | Official dedicated server from terraria.org.                  |
-| TShock  | [`images/tshock/`](images/tshock)   | `tshock-6.1.0`, `tshock-latest` | [TShock](https://github.com/Pryaxis/TShock) server on .NET 9. |
+| Vanilla | [`images/vanilla/`](images/vanilla) | `latest`, `vanilla`, `1458`, `1.4.5.8`, `1458-vanilla`, `1.4.5.8-vanilla` | Official dedicated server from terraria.org. The default flavor: unsuffixed tags are vanilla |
+| TShock  | [`images/tshock/`](images/tshock)   | `tshock`, `6.1.0-tshock`, `1456-tshock`, `1.4.5.6-tshock`                  | [TShock](https://github.com/Pryaxis/TShock) server on .NET 9. `<terraria version>-tshock` is the Terraria version that TShock release targets |
 
 Both images run as user `terraria` (uid/gid 999) with data under `/terraria`:
 
@@ -42,7 +42,7 @@ docker run -d -p 7777:7777 \
 
 Add `-e AUTOCREATE=2` to generate `MyWorld.wld` on first start, or mount a folder that already
 contains it. Without either the container exits with an explanation. For TShock use the
-`tshock-latest` tag; everything else is the same.
+`tshock` tag; everything else is the same.
 
 ## Configuration
 

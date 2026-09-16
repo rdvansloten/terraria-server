@@ -117,9 +117,13 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           DOTTED: ${{ steps.version.outputs.dotted }}
         run: |-
+          # Vanilla is the default flavor: unsuffixed version tags and latest point at it.
           docker buildx imagetools create \
             --tag "$REGISTRY/$REPOSITORY:$VERSION" \
             --tag "$REGISTRY/$REPOSITORY:$DOTTED" \
+            --tag "$REGISTRY/$REPOSITORY:$VERSION-vanilla" \
+            --tag "$REGISTRY/$REPOSITORY:$DOTTED-vanilla" \
+            --tag "$REGISTRY/$REPOSITORY:vanilla" \
             --tag "$REGISTRY/$REPOSITORY:latest" \
             "$BUILD_REGISTRY/$REPOSITORY:candidate"
-          echo "Pushed \`$REGISTRY/$REPOSITORY:$VERSION\`, \`:$DOTTED\` and \`:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed \`$REPOSITORY\` tags: \`$VERSION\`, \`$DOTTED\`, \`$VERSION-vanilla\`, \`$DOTTED-vanilla\`, \`vanilla\`, \`latest\`" >> "$GITHUB_STEP_SUMMARY"

@@ -87,13 +87,13 @@
       "versioningTemplate": "loose"
     },
     {
-      "description": "Fields in the Helm chart annotated with a '# renovate: datasource=... depName=...' comment on the line above",
+      "description": "Fields in the Helm chart annotated with a '# renovate: datasource=... depName=...' comment on the line above (the field itself may be commented out; a -tshock suffix is ignored)",
       "customType": "regex",
       "managerFilePatterns": [
         "/^charts/[^/]+/(values|Chart)\\.yaml$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z0-9.-]+) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[a-z0-9-]+))?\\s*\\n\\s*[A-Za-z]+: \"?(?<currentValue>[^\"\\s]+)\"?"
+        "# renovate: datasource=(?<datasource>[a-z0-9.-]+) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[a-z0-9-]+))?\\s*\\n\\s*(?:# )?[A-Za-z]+: \"?(?<currentValue>[^\"\\s-]+)(?:-tshock)?\"?"
       ]
     }
   ],

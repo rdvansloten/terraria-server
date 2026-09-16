@@ -1,10 +1,13 @@
 # Default values for terraria-server
 image:
   repository: docker.io/rdvansloten/terraria-server
-  # Vanilla server version, kept in sync with images/vanilla/Dockerfile by Renovate.
-  # Use tshock-<version> for the TShock image.
+  # Vanilla Terraria server (the default). Kept in sync with images/vanilla/Dockerfile by Renovate.
   # renovate: datasource=custom.terraria-server depName=terraria-server versioning=loose
   tag: "1458"
+  # To run TShock instead, comment out the tag above and use this one. Also kept current by
+  # Renovate. Then configure the server through tshock.config rather than terraria.config.
+  # renovate: datasource=github-releases depName=Pryaxis/TShock versioning=semver-coerced
+  # tag: "6.1.0-tshock"
   pullPolicy: Always
 
 imagePullSecrets: []
@@ -50,7 +53,7 @@ terraria:
   #   language=en-US
   config: ""
 
-# TShock image only (image.tag: tshock-*). Same semantics as terraria.config: when set, the
+# TShock image only (image.tag: <version>-tshock). Same semantics as terraria.config: when set, the
 # file is written to the config volume on every start. Leave empty to let TShock generate and
 # manage its own config.json / sscconfig.json.
 tshock:

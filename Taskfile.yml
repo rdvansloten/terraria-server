@@ -7,6 +7,8 @@ vars:
   TSHOCK_IMAGE: terraria-server:tshock
   VANILLA_VERSION:
     sh: sed -nE 's/^ARG TERRARIA_SERVER_VERSION="([0-9]+)"/\1/p' images/vanilla/Dockerfile
+  VANILLA_DOTTED:
+    sh: sed -nE 's/^ARG TERRARIA_SERVER_VERSION="([0-9]+)"/\1/p' images/vanilla/Dockerfile | sed 's/./&./g; s/\.$//'
   TSHOCK_VERSION:
     sh: sed -nE 's/^ARG TSHOCK_VERSION="v?([0-9.]+)"/\1/p' images/tshock/Dockerfile
   # Optional: PLATFORM=linux/amd64 to build/test a non-native platform
@@ -61,21 +63,25 @@ tasks:
       - task: test:tshock
 
   publish:vanilla:
-    desc: Build multi-arch vanilla image and push to {{.IMAGE_REPO}} as {{.VANILLA_VERSION}} and latest
+    desc: Build multi-arch vanilla image and push to {{.IMAGE_REPO}} (version, dotted, -vanilla, vanilla, latest)
     cmds:
       - >-
         docker buildx build --platform {{.PLATFORMS}} --push
         -t {{.IMAGE_REPO}}:{{.VANILLA_VERSION}}
+        -t {{.IMAGE_REPO}}:{{.VANILLA_DOTTED}}
+        -t {{.IMAGE_REPO}}:{{.VANILLA_VERSION}}-vanilla
+        -t {{.IMAGE_REPO}}:{{.VANILLA_DOTTED}}-vanilla
+        -t {{.IMAGE_REPO}}:vanilla
         -t {{.IMAGE_REPO}}:latest
         ./images/vanilla
 
   publish:tshock:
-    desc: Build multi-arch TShock image and push to {{.IMAGE_REPO}} as tshock-{{.TSHOCK_VERSION}} and tshock-latest
+    desc: Build multi-arch TShock image and push to {{.IMAGE_REPO}} as {{.TSHOCK_VERSION}}-tshock and tshock (CI also adds the Terraria version tags)
     cmds:
       - >-
         docker buildx build --platform {{.PLATFORMS}} --push
-        -t {{.IMAGE_REPO}}:tshock-{{.TSHOCK_VERSION}}
-        -t {{.IMAGE_REPO}}:tshock-latest
+        -t {{.IMAGE_REPO}}:{{.TSHOCK_VERSION}}-tshock
+        -t {{.IMAGE_REPO}}:tshock
         ./images/tshock
 
   lint:chart:
