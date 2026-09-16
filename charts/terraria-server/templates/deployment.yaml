@@ -83,19 +83,22 @@ spec:
             - name: WAIT_FOR_WORLD
               value: "true"
             {{- end }}
-            {{- if .Values.terraria.autocreate }}
-            - name: AUTOCREATE
-              value: "{{ .Values.terraria.autocreate }}"
-            - name: DIFFICULTY
-              value: "{{ .Values.terraria.difficulty }}"
-            {{- if .Values.terraria.seed }}
-            - name: SEED
-              value: "{{ .Values.terraria.seed }}"
-            {{- end }}
+            {{- if .Values.terraria.password.enabled }}
+            - name: TERRARIA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "terraria-server.passwordSecretName" . }}
+                  key: password
             {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
+            # tmpfs for the private effective config, .NET extraction and TShock's GeoIP copy
+            - name: tmp
+              mountPath: /tmp
+            # Terraria writes favorites.json next to the Worlds directory
+            - name: terraria-data
+              mountPath: /terraria/.local/share/Terraria
             - name: terraria-world
               mountPath: /terraria/.local/share/Terraria/Worlds
             - name: terraria-config
@@ -107,6 +110,11 @@ spec:
       # Disabled persistence falls back to emptyDir: data is lost when the pod is recreated
       # (NOTES.txt warns loudly about this on install and upgrade).
       volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+        - name: terraria-data
+          emptyDir: {}
         - name: terraria-world
         {{- if .Values.persistence.world.enabled }}
           persistentVolumeClaim:

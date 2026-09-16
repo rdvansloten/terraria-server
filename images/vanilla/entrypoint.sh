@@ -9,11 +9,29 @@ fi
 
 WORLD_DIR="/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds"
 WORLD_PATH="${WORLD_DIR}/${WORLD_FILENAME}"
-WORLD_NAME="${WORLD_FILENAME%.wld}"
+CONFIG_FILE="${CONFIG_PATH}/${CONFIG_FILENAME}"
+
+# Seed the default config when the config directory (usually a mounted volume) has none yet
+if [ ! -f "$CONFIG_FILE" ]; then
+  if cp "${TERRARIA_SERVER_PATH}/${CONFIG_FILENAME}.default" "$CONFIG_FILE" 2>/dev/null; then
+    printf "No %s found in %s, seeded the default. Edit it and restart to apply changes.\n" "$CONFIG_FILENAME" "$CONFIG_PATH"
+  else
+    printf "Warning: no %s in %s and the directory is not writable by uid %s, so the server\n" "$CONFIG_FILENAME" "$CONFIG_PATH" "$(id -u)"
+    printf "Warning: runs with built-in defaults. Fix with: chown 999 <host folder>  (or chmod 777).\n"
+  fi
+fi
+
+# Resolve world generation settings: environment variables override serverconfig.txt
+cfg() { sed -nE "s/^$1=(.*)$/\\1/p" "$CONFIG_FILE" 2>/dev/null | tail -1; }
+AUTOCREATE="${AUTOCREATE:-$(cfg autocreate)}"
+SEED="${SEED:-$(cfg seed)}"
+DIFFICULTY="${DIFFICULTY:-$(cfg difficulty)}"
+WORLD_NAME="${WORLD_NAME:-$(cfg worldname)}"
+WORLD_NAME="${WORLD_NAME:-${WORLD_FILENAME%.wld}}"
 
 # TEST_MODE: create a small world with a random seed when none exists
 if [ "$TEST_MODE" = "true" ]; then
-  : "${AUTOCREATE:=1}"
+  AUTOCREATE=1
   : "${SEED:=$(od -A n -t d -N 3 /dev/urandom | tr -d ' ')}"
 fi
 
@@ -26,25 +44,38 @@ printf "Config file   : %s\n" "${CONFIG_PATH}/${CONFIG_FILENAME}"
 printf "Autocreate    : %s\n" "${AUTOCREATE:-off}"
 printf "Wait for world: %s\n" "${WAIT_FOR_WORLD:-false}"
 
-# Seed the default config when the config directory (usually a mounted volume) has none yet
-CONFIG_FILE="${CONFIG_PATH}/${CONFIG_FILENAME}"
-if [ ! -f "$CONFIG_FILE" ]; then
-  if cp "${TERRARIA_SERVER_PATH}/${CONFIG_FILENAME}.default" "$CONFIG_FILE" 2>/dev/null; then
-    printf "No %s found in %s, seeded the default. Edit it and restart to apply changes.\n" "$CONFIG_FILENAME" "$CONFIG_PATH"
-  else
-    printf "Warning: no %s in %s and the directory is not writable by uid %s, so the server\n" "$CONFIG_FILENAME" "$CONFIG_PATH" "$(id -u)"
-    printf "Warning: runs with built-in defaults. Fix with: chown 999 <host folder>  (or chmod 777).\n"
-  fi
-fi
-
-# Check if password is empty in any config
-if grep -q "^password=$\|^password=\"\"$" "$CONFIG_FILE"; then
-  printf "Warning: Server password is not set in your configuration file!\n"
+# Build the effective config the server actually reads: the volume config with the resolved world
+# generation settings and the join password applied. Terraria gives the -config file precedence
+# over command line flags, so overrides must land in this file. It is private (mode 600) and
+# lives on tmpfs, so the volume never sees the password.
+EFFECTIVE_CONFIG="/tmp/serverconfig.effective.txt"
+umask 077
+{
+  grep -vE '^(autocreate|seed|difficulty|worldname|password)=' "$CONFIG_FILE" 2>/dev/null
+  [ -n "$AUTOCREATE" ] && printf 'autocreate=%s\n' "$AUTOCREATE"
+  [ -n "$SEED" ] && printf 'seed=%s\n' "$SEED"
+  [ -n "$DIFFICULTY" ] && printf 'difficulty=%s\n' "$DIFFICULTY"
+  printf 'worldname=%s\n' "$WORLD_NAME"
+  [ -n "$TERRARIA_PASSWORD" ] && printf 'password=%s\n' "$TERRARIA_PASSWORD"
+  true
+} > "$EFFECTIVE_CONFIG"
+umask 022
+if [ -n "$TERRARIA_PASSWORD" ]; then
+  printf "Join password : set from TERRARIA_PASSWORD\n"
+elif grep -qE '^password=.+' "$CONFIG_FILE" 2>/dev/null; then
+  # keep the config file's own password
+  grep -E '^password=.+' "$CONFIG_FILE" | tail -1 >> "$EFFECTIVE_CONFIG"
+  printf "Join password : set in %s\n" "$(basename "$CONFIG_FILE")"
+else
+  printf "Join password : none. Anyone who can reach the port can join.\n"
 fi
 
 if [ $# -gt 0 ]; then
   printf "Running terraria-server with additional arguments: %s\n" "$*"
 fi
+
+# Make sure the world directory exists so a world can be copied in (kubectl cp needs the parent)
+mkdir -p "$WORLD_DIR" 2>/dev/null || true
 
 # Wait for a world file to be copied in (e.g. kubectl cp / docker cp). Only start once the
 # file has stopped growing so a half-copied world is never opened.
@@ -70,7 +101,7 @@ fi
 if [ -f "$WORLD_PATH" ]; then
   # Load existing world
   printf "Loading existing world: %s\n" "$WORLD_PATH"
-  exec $SERVER_BINARY -config "${CONFIG_PATH}/${CONFIG_FILENAME}" -logpath "$LOG_PATH" -world "$WORLD_PATH" "$@"
+  exec $SERVER_BINARY -config "$EFFECTIVE_CONFIG" -logpath "$LOG_PATH" -world "$WORLD_PATH" "$@"
 
 elif [ -n "$AUTOCREATE" ]; then
   case "$AUTOCREATE" in
@@ -79,12 +110,13 @@ elif [ -n "$AUTOCREATE" ]; then
   esac
   printf "No existing world found. Creating world '%s' (size %s%s%s).\n" "$WORLD_NAME" "$AUTOCREATE" \
     "${SEED:+, seed $SEED}" "${DIFFICULTY:+, difficulty $DIFFICULTY}"
-  set -- -autocreate "$AUTOCREATE" -worldname "$WORLD_NAME" ${SEED:+-seed "$SEED"} ${DIFFICULTY:+-difficulty "$DIFFICULTY"} "$@"
-  exec $SERVER_BINARY -config "${CONFIG_PATH}/${CONFIG_FILENAME}" -logpath "$LOG_PATH" -world "$WORLD_PATH" "$@"
+  # Terraria refuses a missing -world without -autocreate on the command line as well
+  exec $SERVER_BINARY -config "$EFFECTIVE_CONFIG" -logpath "$LOG_PATH" -world "$WORLD_PATH" \
+    -autocreate "$AUTOCREATE" -worldname "$WORLD_NAME" ${SEED:+-seed "$SEED"} ${DIFFICULTY:+-difficulty "$DIFFICULTY"} "$@"
 
 else
   printf "Error: No world file at '%s'.\n" "$WORLD_PATH"
-  printf "Either mount a volume containing it, set AUTOCREATE=1|2|3 to generate one,\n"
+  printf "Either mount a volume containing it, set autocreate=1|2|3 in %s (or AUTOCREATE env),\n" "$CONFIG_FILENAME"
   printf "or set WAIT_FOR_WORLD=true and copy it in while the container waits. Exiting.\n"
   exit 1
 fi

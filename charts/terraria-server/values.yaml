@@ -14,26 +14,30 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# Terraria server configuration.
+# Terraria server configuration. Everything the server itself understands lives in
+# serverconfig.txt, provided through terraria.config. The other keys are needed by the chart
+# and the image, not by Terraria.
 terraria:
   # World file name inside the world volume
   world: "Terraria.wld"
-  # Container port the server listens on
+  # Container port the server listens on (keep in sync with port= in the config)
   port: 7777
-  # Generate a world when none exists: 1 = small, 2 = medium, 3 = large. Empty disables it.
-  autocreate: 2
-  # Seed for the generated world (optional)
-  seed: ""
-  # Difficulty of the generated world: 0 = Classic, 1 = Expert, 2 = Master, 3 = Journey
-  difficulty: 0
+  # Join password, managed as a Kubernetes Secret and passed to the server as TERRARIA_PASSWORD,
+  # which overrides password= in serverconfig.txt (and TShock's ServerPassword when that is empty).
+  password:
+    enabled: true
+    # Explicit password. Leave empty to generate a random one on first install; it is then kept
+    # across upgrades, and editing the Secret by hand is respected too.
+    value: ""
+    # Use an existing Secret (key: password) instead of creating one
+    existingSecret: ""
   # Instead of generating a world, keep the pod waiting until a world file is copied in.
   # The install notes print the kubectl cp command. Safe to leave on: once the world is on the
   # volume the server starts normally.
   waitForWorld: false
-  # Contents of serverconfig.txt (vanilla image). When set, the file is written to the config
-  # volume on every start, so changes here win over edits made on the volume. When empty, the
-  # image default is seeded once if the volume has no serverconfig.txt yet.
-  # Example with every option Terraria's serverconfig.txt supports for a typical server:
+  # Contents of serverconfig.txt. When set, the file is written to the config volume on every
+  # start, so changes here win over edits made on the volume. When empty, the image default
+  # (which generates a medium world when none exists) is seeded once onto an empty volume.
   # config: |
   #   # Max number of players allowed on the server, 1 to 255
   #   maxplayers=8
@@ -43,12 +47,15 @@ terraria:
   #   password=changeme
   #   # Message of the day
   #   motd=Welcome to Terraria!
-  #   # Ban list, relative to the server working directory
-  #   banlist=banlist.txt
   #   # Additional cheat protection
   #   secure=1
   #   # Server language code
   #   language=en-US
+  #   # World generation when the world file does not exist: 1 small, 2 medium, 3 large
+  #   autocreate=2
+  #   # 0 Classic, 1 Expert, 2 Master, 3 Journey
+  #   difficulty=0
+  #   #seed=
   config: ""
 
 # TShock image only (image.tag: <version>-tshock). Same semantics as terraria.config: when set, the
@@ -151,12 +158,14 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
+# The image is built for this: everything the server writes goes to the volumes below or to the
+# tmpfs mounts at /tmp and /terraria/.local/share/Terraria.
 securityContext:
   allowPrivilegeEscalation: false
   capabilities:
     drop:
     - ALL
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
   runAsUser: 999
   runAsNonRoot: true
 

@@ -96,3 +96,20 @@ def test_tshock_plugin_is_running(server: Server) -> None:
 def test_tshock_writes_config_and_database(server: Server) -> None:
     for name in ("config.json", "sscconfig.json", "tshock.sqlite"):
         assert server.file_exists(f"{CONFIG_PATH}/{name}"), f"{name} missing from {CONFIG_PATH}"
+
+
+@pytest.mark.flavor("tshock")
+def test_tshock_writes_its_log_files(server: Server) -> None:
+    """TShock keeps a timestamped log and TerrariaServerAPI writes ServerLog.txt; both must exist in
+    the logs directory, be owned by the server user and have content. A root-owned or unwritable
+    ServerLog.txt makes TShock crash at startup with 'Could not write to "ServerLog.txt"'."""
+    listing = server.exec("sh", "-c", f"ls -1 {LOG_PATH}").stdout.split()
+    assert "ServerLog.txt" in listing, listing
+    assert any(re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log", name) for name in listing), listing
+    for name in listing:
+        stat = server.exec("stat", "-c", "%u %s", f"{LOG_PATH}/{name}").stdout.split()
+        assert stat[0] == EXPECTED_UID, f"{name} owned by uid {stat[0]}"
+        assert int(stat[1]) > 0, f"{name} is empty"
+    server_log = server.exec("cat", f"{LOG_PATH}/ServerLog.txt").stdout
+    assert "Plugin TShock" in server_log and "initiated" in server_log
+    assert "Could not write" not in server.logs()

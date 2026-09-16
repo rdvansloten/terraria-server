@@ -60,3 +60,31 @@ Config files provided through values, as filename -> content. Empty when nothing
 {{- with .Values.tshock.sscConfig }}{{ $_ := set $files "sscconfig.json" . }}{{ end -}}
 {{- toYaml $files -}}
 {{- end }}
+
+{{/*
+Name of the Secret holding the join password.
+*/}}
+{{- define "terraria-server.passwordSecretName" -}}
+{{- .Values.terraria.password.existingSecret | default (printf "%s-password" (include "terraria-server.fullname" .)) -}}
+{{- end }}
+
+{{/*
+The join password: explicit value, else the one already stored in the cluster (so upgrades and
+manual edits of the Secret keep it), else a freshly generated one. The generated value is cached
+on .Values so every template in this render sees the same password.
+*/}}
+{{- define "terraria-server.password" -}}
+{{- $pw := .Values.terraria.password.value -}}
+{{- if not $pw -}}
+  {{- $existing := lookup "v1" "Secret" .Release.Namespace (include "terraria-server.passwordSecretName" .) -}}
+  {{- if and $existing $existing.data (hasKey $existing.data "password") -}}
+    {{- $pw = index $existing.data "password" | b64dec -}}
+  {{- else if hasKey .Values.terraria.password "_generated" -}}
+    {{- $pw = .Values.terraria.password._generated -}}
+  {{- else -}}
+    {{- $pw = randAlphaNum 20 -}}
+    {{- $_ := set .Values.terraria.password "_generated" $pw -}}
+  {{- end -}}
+{{- end -}}
+{{- $pw -}}
+{{- end }}

@@ -19,13 +19,36 @@ Gameplay settings (password, max players, port, ...) come from `serverconfig.txt
 volume, or `config.json` for TShock. The image runs as user `terraria` (uid/gid 999), so
 `podSecurityContext.fsGroup` defaults to 999.
 
+## Join password
+
+The chart manages the join password as a Kubernetes Secret and hands it to the server as
+`TERRARIA_PASSWORD`, which overrides `password=` in `serverconfig.txt`. On first install a random
+password is generated and printed once in the install notes. Upgrades keep whatever the Secret
+contains, so you can change it at any time:
+
+```bash
+kubectl -n terraria create secret generic terraria-password \
+  --from-literal=password='new password' --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n terraria rollout restart deploy/terraria
+```
+
+Set `terraria.password.value` to choose the password through values, `terraria.password.existingSecret`
+to bring your own Secret (key `password`), or `terraria.password.enabled: false` to manage the
+password in the config file only.
+
+How it reaches the server differs per flavor. Vanilla reads a private copy of `serverconfig.txt`
+with the password applied, kept on tmpfs, so the config volume never contains it. TShock only
+honors `ServerPassword` in its own `config.json`, so there the entrypoint writes it into that file
+on the config volume at every start, which is where TShock stores it anyway.
+
 ## Worlds
 
-By default a medium world named after `terraria.world` is generated on first start
-(`terraria.autocreate: 2`, with `terraria.seed` and `terraria.difficulty`). To bring your own
-`.wld` instead, install with `terraria.waitForWorld: true`: the pod waits, the install notes print
-the exact `kubectl cp` command, and the server starts once the copy is complete. The world then
-lives on the persistent volume, so `waitForWorld` can stay on.
+By default a medium world named after `terraria.world` is generated on first start, driven by
+`autocreate=2` in the default `serverconfig.txt` (with `seed=` and `difficulty=` alongside it;
+set them through `terraria.config`). To bring your own `.wld` instead, install with
+`terraria.waitForWorld: true`: the pod waits, the install notes print the exact `kubectl cp`
+command, and the server starts once the copy is complete. The world then lives on the persistent
+volume, so `waitForWorld` can stay on.
 
 ## Exposing the server
 
@@ -90,11 +113,14 @@ Pin the name instead:
 
 ```bash
 helm upgrade terraria charts/terraria-server -n terraria \
-  --set nameOverride=terraria --set ingress.traefik.enabled=true
+  --set nameOverride=terraria --set ingress.traefik.enabled=true \
+  --set terraria.password.value='<the password currently in serverconfig.txt>'
 ```
 
 The previous chart always created the Traefik `IngressRouteTCP`; it is now opt-in, hence the
-second flag. With both set the rendered manifests match the previous chart apart from the chart
+second flag. The chart now also manages the join password and would otherwise generate a new
+one, overriding the password on the volume, so pass the current one once (or set
+`terraria.password.enabled=false`). With both set the rendered manifests match the previous chart apart from the chart
 labels, the removed unused `PASSWORD`, `MAXPLAYERS` and `PORT` environment variables, and the
 new config init container.
 
@@ -106,10 +132,11 @@ new config init container.
 | `image.tag` | `"1458"` | Image tag. Vanilla by default; use `<version>-tshock` (see the commented example in values.yaml) for TShock. Both are kept current by Renovate |
 | `image.pullPolicy` | `Always` | Pull policy |
 | `terraria.world` | `Terraria.wld` | World file name inside the world volume |
-| `terraria.autocreate` | `2` | Generate a world of this size (1/2/3) when none exists; empty disables |
-| `terraria.seed`, `terraria.difficulty` | `""`, `0` | Parameters for the generated world |
 | `terraria.waitForWorld` | `false` | Wait for a world file to be copied in instead of generating one |
-| `terraria.config` | `""` | Contents of `serverconfig.txt`, written to the config volume on every start |
+| `terraria.password.enabled` | `true` | Manage the join password as a Secret, passed as `TERRARIA_PASSWORD` |
+| `terraria.password.value` | `""` | Explicit password; empty generates one on first install and keeps it afterwards |
+| `terraria.password.existingSecret` | `""` | Use an existing Secret with key `password` |
+| `terraria.config` | `""` | Contents of `serverconfig.txt` (password, players, motd, autocreate, seed, ...), written to the config volume on every start |
 | `tshock.config`, `tshock.sscConfig` | `""` | Contents of TShock's `config.json` / `sscconfig.json` |
 | `persistence.storageClassName` | `nfs-client` | Default storage class for all PVCs |
 | `persistence.size` | `10Gi` | Default size for all PVCs |
@@ -124,5 +151,5 @@ new config init container.
 | `ingress.traefik.entryPoint` | `terraria` | Traefik TCP entrypoint name |
 | `extraObjects` | `[]` | Additional manifests (objects or strings), templated with `tpl` |
 | `resources` | 500m / 2Gi requests, 4Gi limit | Container resources |
-| `podSecurityContext` / `securityContext` | non-root, uid 999, no capabilities | Security contexts |
+| `podSecurityContext` / `securityContext` | non-root uid 999, no capabilities, read-only root filesystem | Security contexts. The image supports a read-only root; `/tmp` and `/terraria/.local/share/Terraria` are tmpfs/emptyDir |
 | `nameOverride` | `""` | Set to `terraria` when upgrading the pre-existing release |

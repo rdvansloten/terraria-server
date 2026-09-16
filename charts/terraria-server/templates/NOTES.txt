@@ -36,10 +36,35 @@ The server is waiting for a world file (terraria.waitForWorld=true). Import your
 
 The server starts as soon as the copy finishes. The world is on the persistent volume, so
 later restarts load it directly even with waitForWorld left on.
-{{- else if .Values.terraria.autocreate }}
+{{- else }}
 
-A {{ if eq (int .Values.terraria.autocreate) 1 }}small{{ else if eq (int .Values.terraria.autocreate) 2 }}medium{{ else }}large{{ end }} world is generated on first start if none exists. To import an existing
-world instead, install with terraria.waitForWorld=true and follow the printed kubectl cp command.
+If no world file exists the server follows autocreate= in serverconfig.txt (the default config
+generates a medium world). To import an existing world instead, install with
+terraria.waitForWorld=true and follow the printed kubectl cp command.
+{{- end }}
+
+{{- if .Values.terraria.password.enabled }}
+{{- if .Values.terraria.password.existingSecret }}
+
+Join password: taken from Secret "{{ .Values.terraria.password.existingSecret }}" (key: password).
+{{- else if .Release.IsInstall }}
+
+Join password (generated for this install, shown only now):
+
+  {{ include "terraria-server.password" . }}
+
+It lives in Secret "{{ include "terraria-server.passwordSecretName" . }}". Change it any time with
+
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "terraria-server.passwordSecretName" . }} \
+    --from-literal=password='<new password>' --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n {{ .Release.Namespace }} rollout restart deploy/{{ include "terraria-server.fullname" . }}
+
+Upgrades keep whatever the Secret holds.
+{{- else }}
+
+Join password: unchanged, in Secret "{{ include "terraria-server.passwordSecretName" . }}".
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "terraria-server.passwordSecretName" . }} -o jsonpath='{.data.password}' | base64 -d
+{{- end }}
 {{- end }}
 
 Reach the server:
