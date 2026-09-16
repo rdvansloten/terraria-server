@@ -1,0 +1,84 @@
+version: '3'
+
+vars:
+  IMAGE_REPO: docker.io/rdvansloten/terraria-server
+  PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
+  VANILLA_IMAGE: terraria-server:vanilla
+  TSHOCK_IMAGE: terraria-server:tshock
+  VANILLA_VERSION:
+    sh: sed -nE 's/^ARG TERRARIA_SERVER_VERSION="([0-9]+)"/\1/p' vanilla/Dockerfile
+  TSHOCK_VERSION:
+    sh: sed -nE 's/^ARG TSHOCK_VERSION="v?([0-9.]+)"/\1/p' tshock/Dockerfile
+  # Optional: PLATFORM=linux/amd64 to build/test a non-native platform
+  PLATFORM_FLAG: '{{if .PLATFORM}}--platform {{.PLATFORM}}{{end}}'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  install:
+    desc: Install Python test dependencies into the mise-managed virtualenv
+    cmds:
+      - uv pip install --quiet -r tests/requirements.txt
+    status:
+      - python -c "import pytest"
+
+  build:vanilla:
+    desc: Build the vanilla Terraria image ({{.VANILLA_IMAGE}})
+    cmds:
+      - docker buildx build {{.PLATFORM_FLAG}} --load -t {{.VANILLA_IMAGE}} ./vanilla
+    sources:
+      - vanilla/**/*
+
+  build:tshock:
+    desc: Build the TShock image ({{.TSHOCK_IMAGE}})
+    cmds:
+      - docker buildx build {{.PLATFORM_FLAG}} --load -t {{.TSHOCK_IMAGE}} ./tshock
+    sources:
+      - tshock/**/*
+
+  build:
+    desc: Build both images
+    deps: ["build:vanilla", "build:tshock"]
+
+  test:vanilla:
+    desc: Build and test the vanilla image
+    deps: ["install", "build:vanilla"]
+    cmds:
+      - pytest tests --image {{.VANILLA_IMAGE}} --flavor vanilla {{.PLATFORM_FLAG}} {{.CLI_ARGS}}
+
+  test:tshock:
+    desc: Build and test the TShock image
+    deps: ["install", "build:tshock"]
+    cmds:
+      - pytest tests --image {{.TSHOCK_IMAGE}} --flavor tshock {{.PLATFORM_FLAG}} {{.CLI_ARGS}}
+
+  test:
+    desc: Build and test both images
+    cmds:
+      - task: test:vanilla
+      - task: test:tshock
+
+  publish:vanilla:
+    desc: Build multi-arch vanilla image and push to {{.IMAGE_REPO}} as {{.VANILLA_VERSION}} and latest
+    cmds:
+      - >-
+        docker buildx build --platform {{.PLATFORMS}} --push
+        -t {{.IMAGE_REPO}}:{{.VANILLA_VERSION}}
+        -t {{.IMAGE_REPO}}:latest
+        ./vanilla
+
+  publish:tshock:
+    desc: Build multi-arch TShock image and push to {{.IMAGE_REPO}} as tshock-{{.TSHOCK_VERSION}} and tshock-latest
+    cmds:
+      - >-
+        docker buildx build --platform {{.PLATFORMS}} --push
+        -t {{.IMAGE_REPO}}:tshock-{{.TSHOCK_VERSION}}
+        -t {{.IMAGE_REPO}}:tshock-latest
+        ./tshock
+
+  lint:chart:
+    desc: Lint the Helm chart
+    cmds:
+      - helm lint charts/terraria-server

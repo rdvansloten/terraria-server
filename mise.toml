@@ -1,0 +1,12 @@
+# Development tooling, managed by mise (https://mise.jdx.dev)
+#   mise install      install python and task
+#   task --list       show available tasks
+
+[tools]
+python = "3.13"
+task = "latest"
+uv = "latest"
+
+[env]
+# Project-local virtualenv, created on first `mise install` / directory entry
+_.python.venv = { path = ".venv", create = true }

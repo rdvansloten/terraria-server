@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "terraria-server.fullname" . }}
+  labels:
+    {{- include "terraria-server.labels" . | nindent 4 }}
+spec:
+  strategy:
+      type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "terraria-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "terraria-server.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.persistence.world.enabled }}
+      initContainers:
+        - name: set-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 999:999 /terraria/.local/share/Terraria/Worlds && chmod -R 770 /terraria/.local/share/Terraria/Worlds"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - name: terraria-world
+              mountPath: /terraria/.local/share/Terraria/Worlds
+      {{- end }}
+      containers:
+        - name: terraria
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: terraria
+              containerPort: {{ .Values.terraria.port }}
+              protocol: TCP
+          env:
+            - name: WORLD_FILENAME
+              value: "{{ .Values.terraria.world }}"
+            {{- if .Values.terraria.password }}
+            - name: PASSWORD
+              value: "{{ .Values.terraria.password }}"
+            {{- end }}
+            - name: MAXPLAYERS
+              value: "{{ .Values.terraria.maxPlayers }}"
+            - name: PORT
+              value: "{{ .Values.terraria.port }}"
+            - name: DIFFICULTY
+              value: "{{ .Values.terraria.difficulty }}"
+            - name: AUTOCREATE
+              value: "{{ .Values.terraria.autocreate }}"
+            {{- if .Values.terraria.seed }}
+            - name: SEED
+              value: "{{ .Values.terraria.seed }}"
+            {{- end }}
+            - name: DOTNET_BUNDLE_EXTRACT_BASE_DIR
+              value: "/tmp"
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+          {{- if .Values.persistence.world.enabled }}
+            - name: terraria-world
+              mountPath: /terraria/.local/share/Terraria/Worlds
+          {{- end }}
+          {{- if .Values.persistence.config.enabled }}
+            - name: terraria-config
+              mountPath: /terraria/config
+          {{- end }}
+          {{- if .Values.persistence.logs.enabled }}
+            - name: terraria-logs
+              mountPath: /terraria/logs
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+      {{- if .Values.persistence.world.enabled }}
+        - name: terraria-world
+          persistentVolumeClaim:
+            claimName: {{ include "terraria-server.fullname" . }}-world
+      {{- end }}
+      {{- if .Values.persistence.config.enabled }}
+        - name: terraria-config
+          persistentVolumeClaim:
+            claimName: {{ include "terraria-server.fullname" . }}-config
+      {{- end }}
+      {{- if .Values.persistence.logs.enabled }}
+        - name: terraria-logs
+          persistentVolumeClaim:
+            claimName: {{ include "terraria-server.fullname" . }}-logs
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

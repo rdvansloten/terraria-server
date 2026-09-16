@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests"
+  ],
+  "enabledManagers": [
+    "dockerfile",
+    "github-actions",
+    "custom.regex"
+  ],
+  "schedule": [
+    "before 6am"
+  ],
+  "timezone": "Europe/Amsterdam",
+  "labels": [
+    "dependencies"
+  ],
+  "packageRules": [
+    {
+      "description": "Debian base images: follow codename releases and pin digests so security rebuilds surface as PRs",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "debian"
+      ],
+      "versioning": "debian",
+      "groupName": "debian base image"
+    },
+    {
+      "description": "Group GitHub Actions updates into a single PR",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github actions"
+    },
+    {
+      "description": "TShock releases: ignore pre-releases",
+      "matchDepNames": [
+        "Pryaxis/TShock"
+      ],
+      "ignoreUnstable": true
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Track TShock releases for ARG TSHOCK_VERSION in tshock/Dockerfile",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^tshock/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "ARG TSHOCK_VERSION=\"(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "Pryaxis/TShock",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced"
+    }
+  ]
+}

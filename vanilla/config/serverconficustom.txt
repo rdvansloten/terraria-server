@@ -1,0 +1,17 @@
+# Sets the max number of players allowed on a server. Value must be between 1 and 255.
+maxplayers=8
+
+# Set the port number
+port=7777
+
+# Set the message of the day.
+motd=Welcome to deez nuts!
+
+# The location of the banlist. Defaults to banlist.txt in the working directory.
+banlist=banlist.txt
+
+# Adds addition cheat protection.
+secure=1
+
+# Sets the server language from its language code. 
+language=en-US
