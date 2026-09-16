@@ -1,24 +1,34 @@
 # terraria-server
+
 Terraria server Docker image and Helm chart for vanilla and TShock
 
 Images are published to [`docker.io/rdvansloten/terraria-server`](https://hub.docker.com/r/rdvansloten/terraria-server)
 for `linux/amd64`, `linux/arm64` and `linux/arm/v7`.
 
-| Flavor | Directory | Tags | Notes |
-|--------|-----------|------|-------|
-| Vanilla | [`images/vanilla/`](images/vanilla) | `1458`, `1.4.5.8`, `latest` | Official dedicated server from terraria.org. Version bumps arrive as Renovate PRs |
-| TShock | [`images/tshock/`](images/tshock) | `tshock-6.1.0`, `tshock-latest` | [TShock](https://github.com/Pryaxis/TShock) server on .NET 9. Version bumps come in through Renovate |
+| Flavor  | Directory                           | Tags                            | Notes                                                         |
+| ------- | ----------------------------------- | ------------------------------- | ------------------------------------------------------------- |
+| Vanilla | [`images/vanilla/`](images/vanilla) | `1458`, `1.4.5.8`, `latest`     | Official dedicated server from terraria.org.                  |
+| TShock  | [`images/tshock/`](images/tshock)   | `tshock-6.1.0`, `tshock-latest` | [TShock](https://github.com/Pryaxis/TShock) server on .NET 9. |
 
 Both images run as user `terraria` (uid/gid 999) with data under `/terraria`:
 
-| Path | Purpose |
-|------|---------|
+| Path                                     | Purpose                                                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
 | `/terraria/.local/share/Terraria/Worlds` | World files. Mount a volume here; `WORLD_FILENAME` selects the world (default `Terraria.wld`) |
-| `/terraria/config` | `serverconfig.txt` (vanilla) or TShock's `config.json`, `sscconfig.json` and `tshock.sqlite` |
-| `/terraria/logs` | Server logs |
-| `/terraria/plugins` | Extra TShock plugins (TShock only) |
+| `/terraria/config`                       | `serverconfig.txt` (vanilla) or TShock's `config.json`, `sscconfig.json` and `tshock.sqlite`  |
+| `/terraria/logs`                         | Server logs                                                                                   |
+| `/terraria/plugins`                      | Extra TShock plugins (TShock only)                                                            |
 
-Set `TEST_MODE=true` to auto-create a world when none is mounted, which is what the tests do.
+How the server obtains its world when the world file does not exist yet:
+
+| Variable         | Effect                                                                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTOCREATE`     | Generate a world: `1` small, `2` medium, `3` large. `SEED` and `DIFFICULTY` (0 to 3) apply to it                                                    |
+| `WAIT_FOR_WORLD` | Wait until a world file is copied in (`kubectl cp`, or `docker exec -i <c> sh -c 'cat > <path>' < my.wld`), then start. Wins over `AUTOCREATE`      |
+| `TEST_MODE`      | Small world with a random seed, used by the tests                                                                                                   |
+
+With none set the container exits with an error rather than silently generating a fresh world.
+An existing world is never overwritten.
 
 ## Quick start
 
@@ -30,8 +40,8 @@ docker run -d -p 7777:7777 \
   rdvansloten/terraria-server:latest
 ```
 
-The container exits with an explanation if the world file does not exist. Create one first by
-adding `-autocreate 2 -worldname MyWorld` (1 = small, 2 = medium, 3 = large) to the command.
+Add `-e AUTOCREATE=2` to generate `MyWorld.wld` on first start, or mount a folder that already
+contains it. Without either the container exits with an explanation.
 
 ## Helm chart
 
@@ -70,11 +80,11 @@ ownership, world creation and clean logs. The same suite runs in CI for all thre
 
 Required repository settings:
 
-| Name | Kind | Used by |
-|------|------|---------|
-| `DOCKER_USERNAME`, `DOCKER_PASSWORD` | secrets | Pushing images, authenticated Docker Hub lookups in Renovate |
-| `RENOVATE_APP_ID` | variable | Client id of a GitHub App installed on the repo with Contents, Pull requests and Workflows read/write |
-| `RENOVATE_APP_PRIVATE_KEY` | secret | Private key of that app |
+| Name                                 | Kind     | Used by                                                                                               |
+| ------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------- |
+| `DOCKER_USERNAME`, `DOCKER_PASSWORD` | secrets  | Pushing images, authenticated Docker Hub lookups in Renovate                                          |
+| `RENOVATE_APP_ID`                    | variable | Client id of a GitHub App installed on the repo with Contents, Pull requests and Workflows read/write |
+| `RENOVATE_APP_PRIVATE_KEY`           | secret   | Private key of that app                                                                               |
 
 ## License
 

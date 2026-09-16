@@ -29,12 +29,21 @@ terraria:
   # Contents of serverconfig.txt (vanilla image). When set, the file is written to the config
   # volume on every start, so changes here win over edits made on the volume. When empty, the
   # image default is seeded once if the volume has no serverconfig.txt yet.
+  # Example with every option Terraria's serverconfig.txt supports for a typical server:
   # config: |
+  #   # Max number of players allowed on the server, 1 to 255
   #   maxplayers=8
+  #   # Port the server listens on (keep in sync with terraria.port)
   #   port=7777
+  #   # Password required to join; leave empty for none
   #   password=changeme
+  #   # Message of the day
   #   motd=Welcome to Terraria!
+  #   # Ban list, relative to the server working directory
+  #   banlist=banlist.txt
+  #   # Additional cheat protection
   #   secure=1
+  #   # Server language code
   #   language=en-US
   config: ""
 
