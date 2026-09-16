@@ -11,14 +11,18 @@ module.exports = {
   gitAuthor: process.env.RENOVATE_GIT_AUTHOR,
 
   // Authenticated Docker Hub lookups avoid the anonymous rate limit for digest pinning.
-  hostRules: [
-    {
-      hostType: "docker",
-      matchHost: "docker.io",
-      username: process.env.RENOVATE_DOCKERHUB_USERNAME,
-      password: process.env.RENOVATE_DOCKERHUB_TOKEN,
-    },
-  ],
+  // Only added when credentials are present so local dry runs without them stay warning-free.
+  hostRules:
+    process.env.RENOVATE_DOCKERHUB_USERNAME && process.env.RENOVATE_DOCKERHUB_TOKEN
+      ? [
+          {
+            hostType: "docker",
+            matchHost: "docker.io",
+            username: process.env.RENOVATE_DOCKERHUB_USERNAME,
+            password: process.env.RENOVATE_DOCKERHUB_TOKEN,
+          },
+        ]
+      : [],
 
   printConfig: false,
 };

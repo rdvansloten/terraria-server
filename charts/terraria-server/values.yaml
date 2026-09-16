@@ -1,6 +1,9 @@
 # Default values for terraria-server
 image:
   repository: docker.io/rdvansloten/terraria-server
+  # Vanilla server version, kept in sync with images/vanilla/Dockerfile by Renovate.
+  # Use tshock-<version> for the TShock image.
+  # renovate: datasource=custom.terraria-server depName=terraria-server versioning=loose
   tag: "1458"
   pullPolicy: Always
 

@@ -85,6 +85,16 @@
       "depNameTemplate": "terraria-server",
       "datasourceTemplate": "custom.terraria-server",
       "versioningTemplate": "loose"
+    },
+    {
+      "description": "Fields in the Helm chart annotated with a '# renovate: datasource=... depName=...' comment on the line above",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^charts/[^/]+/(values|Chart)\\.yaml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z0-9.-]+) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[a-z0-9-]+))?\\s*\\n\\s*[A-Za-z]+: \"?(?<currentValue>[^\"\\s]+)\"?"
+      ]
     }
   ],
   "customDatasources": {
