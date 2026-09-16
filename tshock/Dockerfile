@@ -1,80 +1,104 @@
-ARG DOTNETRUNTIME_VERSION=6.0
-FROM alpine:3.21 AS base
+ARG TSHOCK_VERSION="v6.1.0"
+ARG TSHOCK_SERVER_PATH="/tshock-server"
+ARG CONFIG_PATH="/terraria/config"
+ARG LOG_PATH="/terraria/logs"
+ARG PLUGIN_PATH="/terraria/plugins"
+ARG DOTNET_RUNTIME_VERSION="9.0"
 
-# Available environment variables:
-# TSHOCKVERSION="v5.2.4"
-# WORLD_FILENAME="world.wld"
-# CONFIGPATH="/tshock/config"
-# LOGPATH="/tshock/logs"
+FROM alpine:3.22 AS base
 
-RUN apk add --no-cache \
-    curl unzip
+# Set values as args so the second stage may inherit
+ARG TARGETARCH
+ARG TSHOCK_VERSION
+ARG TSHOCK_SERVER_PATH
 
-# add the bootstrap file
-COPY bootstrap.sh /tshock/bootstrap.sh
+# Required to download and unpack the TShock release
+RUN apk add --no-cache curl unzip
 
-ENV TSHOCKVERSION=v5.2.4
-
-# Download and unpack TShock
-# x86_64:   https://github.com/Pryaxis/TShock/releases/download/v5.2.4/TShock-5.2.4-for-Terraria-1.4.4.9-linux-amd64-Release.zip
-# aarch64:  https://github.com/Pryaxis/TShock/releases/download/v5.2.4/TShock-5.2.4-for-Terraria-1.4.4.9-linux-arm64-Release.zip
+# Download and unpack TShock for the target architecture.
+# Release assets are named e.g. TShock-6.1.0-for-Terraria-1.4.5.6-linux-x64-Release.zip
+# and contain a single tar with the server files.
 RUN set -eux; \
-    arch="$(apk --print-arch)"; \
-    case "$arch" in \
-    'x86_64') arch_suffix="amd64" ;; \
-    'aarch64') arch_suffix="arm64" ;; \
-    *) \
-      echo >&2 "error: unsupported architecture '$arch'."; \
-      exit 1 \
-      ;; \
+    case "${TARGETARCH}" in \
+      amd64) arch_suffix="x64" ;; \
+      arm64) arch_suffix="arm64" ;; \
+      arm)   arch_suffix="arm" ;; \
+      *) echo >&2 "error: unsupported architecture '${TARGETARCH}'"; exit 1 ;; \
     esac; \
-    # Get the asset list from GitHub API
-    if [ "${TSHOCKVERSION}" = "latest" ]; then \
-        RELEASE_URL="https://api.github.com/repos/Pryaxis/TShock/releases/latest"; \
+    if [ "${TSHOCK_VERSION}" = "latest" ]; then \
+      release_url="https://api.github.com/repos/Pryaxis/TShock/releases/latest"; \
     else \
-        RELEASE_URL="https://api.github.com/repos/Pryaxis/TShock/releases/tags/$TSHOCKVERSION"; \
+      release_url="https://api.github.com/repos/Pryaxis/TShock/releases/tags/${TSHOCK_VERSION}"; \
     fi; \
-    TSHOCKURL=$(curl -s $RELEASE_URL | grep browser_download_url | grep "linux-$arch_suffix-Release.zip" | cut -d '"' -f 4); \
-    TSHOCKZIP=$(basename $TSHOCKURL); \
-    curl -L -o "/$TSHOCKZIP" "$TSHOCKURL"; \
-    unzip "$TSHOCKZIP" -d "/tshock"; \
-    tar -xvf "/tshock/"*.tar -C "/tshock"; \
-    rm "$TSHOCKZIP"; \
-    chmod +x "/tshock/TShock.Server"; \
-    # add executable perm to bootstrap
-    chmod +x "/tshock/bootstrap.sh"
+    zip_url=$(curl -fsSL "${release_url}" | grep browser_download_url | grep "linux-${arch_suffix}-Release.zip" | cut -d '"' -f 4); \
+    [ -n "${zip_url}" ] || { echo >&2 "error: no linux-${arch_suffix} asset found for ${TSHOCK_VERSION}"; exit 1; }; \
+    echo "Downloading ${zip_url}"; \
+    curl -fsSL -o /tshock.zip "${zip_url}"; \
+    mkdir -p /tmp/tshock "${TSHOCK_SERVER_PATH}"; \
+    unzip -q /tshock.zip -d /tmp/tshock; \
+    tar -xf /tmp/tshock/*.tar -C "${TSHOCK_SERVER_PATH}"; \
+    chmod +x "${TSHOCK_SERVER_PATH}/TShock.Server"; \
+    rm -rf /tshock.zip /tmp/tshock
 
-# do not use -slim due to mysql/tshock requirements
-FROM mcr.microsoft.com/dotnet/runtime:${DOTNETRUNTIME_VERSION} AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:${DOTNET_RUNTIME_VERSION}
 
-LABEL org.opencontainers.image.authors="Ryan Sheehan <rsheehan@gmail.com>"
-LABEL org.opencontainers.image.url="https://github.com/ryansheehan/terraria"
-LABEL org.opencontainers.image.documentation="Dockerfile for Terraria"
-LABEL org.opencontainers.image.source="https://github.com/ryansheehan/terraria/blob/master/tshock/Dockerfile"
+# Inherited arguments
+ARG TARGETARCH
+ARG TSHOCK_VERSION
+ARG TSHOCK_SERVER_PATH
+ARG CONFIG_PATH
+ARG LOG_PATH
+ARG PLUGIN_PATH
 
-# documenting ports
-EXPOSE 7777 7878
+# Container labels
+LABEL org.opencontainers.image.authors="Rudy van Sloten"
+LABEL org.opencontainers.image.url="https://hub.docker.com/r/rdvansloten/terraria-server"
+LABEL org.opencontainers.image.documentation="Container image for TShock Terraria Server."
+LABEL org.opencontainers.image.source="https://github.com/rdvansloten/terraria-server/blob/main/tshock/Dockerfile"
+LABEL org.opencontainers.image.version="$TSHOCK_VERSION"
 
-# env used in the bootstrap
-ENV CONFIGPATH=/root/.local/share/Terraria/Worlds
-ENV LOGPATH=/tshock/logs
-ENV WORLD_FILENAME=""
+# Environment variables
+ENV TSHOCK_SERVER_PATH="$TSHOCK_SERVER_PATH"
+ENV TSHOCK_VERSION="$TSHOCK_VERSION"
+ENV CONFIG_PATH="$CONFIG_PATH"
+ENV LOG_PATH="$LOG_PATH"
+ENV PLUGIN_PATH="$PLUGIN_PATH"
+ENV DEFAULT_TERRARIA_SERVER_PATH=".local/share/Terraria"
+ENV WORLD_FILENAME="Terraria.wld"
+ENV TARGETARCH="${TARGETARCH}"
+ENV ENTRYPOINT="entrypoint.sh"
+# .NET single-file bundles extract native libraries here; keep it inside the writable home
+ENV DOTNET_BUNDLE_EXTRACT_BASE_DIR="/terraria/.net"
 
-# Allow for external data
-VOLUME ["/root/.local/share/Terraria/Worlds", "/tshock/logs", "/tshock/ServerPlugins", "/config"]
+# jq: read StorageType/MySql settings from TShock config.json
+# mariadb-client: wait for the database before starting when using MySQL storage
+RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
+        jq \
+        mariadb-client \
+    && rm -rf /var/lib/apt/lists/*
 
-# install nuget to grab tshock dependencies
-RUN apt-get update -y && \
-    apt-get install -y nuget mariadb-client jq && \
-    rm -rf /var/lib/apt/lists/* /tmp/*
+# Add terraria user and group to prevent needing to run the server as root (dangerous)
+RUN groupadd -r terraria \
+    && useradd -u 999 -r -g terraria -d "/terraria" -s /bin/sh terraria \
+    && mkdir -p "$TSHOCK_SERVER_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds" "$CONFIG_PATH" "$LOG_PATH" "$PLUGIN_PATH"
 
-# copy game files
-COPY --from=base /tshock/ /tshock/
-# Copy the plugin files to a place that bootstrap can copy them to the plugins folder at runtime
-COPY --from=base /tshock/ServerPlugins/ /plugins
+# Copy files from previous stage and repository
+# TShock opens some of its own files (e.g. GeoIP.dat) read-write, so the server tree must be owner-writable
+COPY --from=base --chown=terraria:terraria --chmod=0750 "${TSHOCK_SERVER_PATH}/" "${TSHOCK_SERVER_PATH}/"
+COPY --chown=terraria:terraria --chmod=0550 "$ENTRYPOINT" "${TSHOCK_SERVER_PATH}/${ENTRYPOINT}"
+
+# Make terraria user owner over relevant paths.
+# TShock writes config.json, sscconfig.json and tshock.sqlite into CONFIG_PATH, so it must be writable.
+RUN chown -R terraria:terraria "/terraria" "$TSHOCK_SERVER_PATH" \
+    && chmod -R 770 "$LOG_PATH" "$CONFIG_PATH" "$PLUGIN_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}"
 
 # Set working directory to server
-WORKDIR /tshock
+WORKDIR "/tshock-server"
 
-# run the bootstrap, which will copy the TShockAPI.dll before starting the server
-ENTRYPOINT [ "/bin/sh", "bootstrap.sh" ]
+# Switch to terraria user
+USER terraria
+
+# Document default Terraria server port and TShock REST API port
+EXPOSE 7777 7878
+
+ENTRYPOINT [ "/bin/sh", "entrypoint.sh" ]

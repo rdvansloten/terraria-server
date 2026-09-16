@@ -1,0 +1,130 @@
+name: Build TShock Image
+
+# Tests the TShock image on pull requests touching tshock/, and on pushes to main
+# (e.g. merged Renovate PRs bumping TSHOCK_VERSION) tests, builds multi-arch and pushes.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'tshock/**'
+      - 'tests/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'tshock/**'
+  workflow_dispatch:
+
+env:
+  IMAGE: rdvansloten/terraria-server
+
+jobs:
+  version:
+    name: Read TShock version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Read TSHOCK_VERSION from Dockerfile
+      id: version
+      run: |
+        set -euo pipefail
+        version=$(sed -nE 's/^ARG TSHOCK_VERSION="v?([0-9.]+)"/\1/p' tshock/Dockerfile)
+        [ -n "$version" ] || { echo "::error::Could not read TSHOCK_VERSION from tshock/Dockerfile"; exit 1; }
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "TShock version: $version"
+
+  test:
+    name: Test ${{ matrix.platform }}
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm/v7, linux/arm64]
+        include:
+          - platform: linux/amd64
+            tag: tshock-amd64
+          - platform: linux/arm/v7
+            tag: tshock-armv7
+          - platform: linux/arm64
+            tag: tshock-arm64
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build image for ${{ matrix.platform }}
+      uses: docker/build-push-action@v6
+      with:
+        context: ./tshock
+        file: tshock/Dockerfile
+        platforms: ${{ matrix.platform }}
+        push: false
+        load: true
+        tags: terraria-server:${{ matrix.tag }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: pip
+        cache-dependency-path: tests/requirements.txt
+
+    - name: Install test dependencies
+      run: pip install -r tests/requirements.txt
+
+    - name: Test ${{ matrix.platform }}
+      run: pytest tests --image terraria-server:${{ matrix.tag }} --flavor tshock --platform ${{ matrix.platform }}
+  publish:
+    name: Build and push
+    needs: [version, test]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        platforms: linux/amd64,linux/arm/v7,linux/arm64
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and push multi-arch image
+      uses: docker/build-push-action@v6
+      with:
+        context: ./tshock
+        file: tshock/Dockerfile
+        platforms: linux/amd64,linux/arm/v7,linux/arm64
+        push: true
+        tags: |
+          ${{ env.IMAGE }}:tshock-${{ needs.version.outputs.version }}
+          ${{ env.IMAGE }}:tshock-latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Logout from Docker Hub
+      if: always()
+      run: docker logout
