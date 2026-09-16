@@ -2,7 +2,8 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended",
-    "docker:pinDigests"
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests"
   ],
   "enabledManagers": [
     "dockerfile",
@@ -29,18 +30,19 @@
       "groupName": "debian base image"
     },
     {
-      "description": "Group GitHub Actions updates into a single PR",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "groupName": "github actions"
-    },
-    {
       "description": "TShock releases: ignore pre-releases",
       "matchDepNames": [
         "Pryaxis/TShock"
       ],
       "ignoreUnstable": true
+    },
+    {
+      "description": "GitHub Actions: keep pinned to commit SHAs, group into one PR",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true,
+      "groupName": "github actions"
     }
   ],
   "customManagers": [
