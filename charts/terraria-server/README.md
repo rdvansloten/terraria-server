@@ -4,8 +4,8 @@ Helm chart for a Terraria dedicated server running the
 [`rdvansloten/terraria-server`](https://hub.docker.com/r/rdvansloten/terraria-server) image.
 
 It creates a single-replica `Deployment` (strategy `Recreate`), a `ClusterIP` `Service`,
-three `PersistentVolumeClaim`s (world, config, logs) and, optionally, a Traefik `IngressRouteTCP`
-or an ingress-nginx `tcp-services` ConfigMap entry to expose the TCP port.
+three `PersistentVolumeClaim`s (world, config, logs) and, optionally, a Traefik `IngressRouteTCP`.
+Any other objects you need (for example for a different ingress controller) go in `extraObjects`.
 
 ## Paths
 
@@ -27,29 +27,26 @@ Pick one of:
 
 | Method | Values | Notes |
 |--------|--------|-------|
-| LoadBalancer / NodePort | `service.type: LoadBalancer` | Works on any cluster, no ingress controller involved |
+| LoadBalancer | `service.type: LoadBalancer` | Cloud or MetalLB assigns an external IP. `service.loadBalancerIP` and `service.annotations` for provider specifics |
+| NodePort | `service.type: NodePort`, `service.nodePort: 30777` | Reachable on every node at that port. Leave `nodePort` empty for a random one |
 | Traefik | `ingress.traefik.enabled: true` | Creates an `IngressRouteTCP` on entrypoint `ingress.traefik.entryPoint`. Traefik must define that TCP entrypoint |
-| ingress-nginx | `ingress.nginx.enabled: true` | Creates the `tcp-services` ConfigMap in `ingress.nginx.namespace` mapping `ingress.nginx.externalPort` to this Service |
+| Anything else | `extraObjects` | A list of extra manifests rendered by the chart, with `{{ }}` templating |
 
-For ingress-nginx, the controller must be started with
-`--tcp-services-configmap=ingress-nginx/tcp-services` and its Service must publish the port,
-for example with the ingress-nginx chart:
-
-```yaml
-controller:
-  extraArgs:
-    tcp-services-configmap: ingress-nginx/tcp-services
-  service:
-    ports:
-      terraria: 7777
-```
-
-If the ingress-nginx chart already manages a `tcp-services` ConfigMap (`tcp:` values), keep
-`ingress.nginx.enabled: false` and add the entry there instead:
+Example: ingress-nginx TCP passthrough via `extraObjects` (the controller needs
+`--tcp-services-configmap=ingress-nginx/tcp-services` and the port on its Service):
 
 ```yaml
-tcp:
-  "7777": "terraria/terraria:7777"
+ingress:
+  traefik:
+    enabled: false
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: tcp-services
+      namespace: ingress-nginx
+    data:
+      "7777": "{{ .Release.Namespace }}/{{ include \"terraria-server.fullname\" . }}:7777"
 ```
 
 ## Install
@@ -84,12 +81,13 @@ from the chart labels and the removed `PASSWORD` environment variable (which the
 | `persistence.size` | `10Gi` | Default size for all PVCs |
 | `persistence.{world,config,logs}.*` | | Per-volume overrides for class, access modes, size, selector, volumeName |
 | `service.port` | `7777` | Service port |
-| `service.type` | `ClusterIP` | Set to `LoadBalancer` or `NodePort` to expose without an ingress controller |
+| `service.type` | `ClusterIP` | `ClusterIP`, `NodePort` or `LoadBalancer` |
+| `service.nodePort` | `""` | Fixed node port for `NodePort` |
+| `service.loadBalancerIP` | `""` | Static IP for `LoadBalancer` |
+| `service.annotations` | `{}` | Service annotations (MetalLB, cloud providers) |
 | `ingress.traefik.enabled` | `true` | Create a Traefik `IngressRouteTCP` |
 | `ingress.traefik.entryPoint` | `terraria` | Traefik TCP entrypoint name |
-| `ingress.nginx.enabled` | `false` | Create the ingress-nginx `tcp-services` ConfigMap entry |
-| `ingress.nginx.namespace` | `ingress-nginx` | Namespace of the ingress-nginx controller |
-| `ingress.nginx.externalPort` | `7777` | Port published on the ingress-nginx controller |
+| `extraObjects` | `[]` | Additional manifests (objects or strings), templated with `tpl` |
 | `resources` | 500m / 2Gi requests, 4Gi limit | Container resources |
 | `podSecurityContext` / `securityContext` | non-root, uid 999, no capabilities | Security contexts |
 | `nameOverride` | `""` | Set to `terraria` when upgrading the pre-existing release |

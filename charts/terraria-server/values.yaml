@@ -62,38 +62,43 @@ persistence:
     selector: {}
     volumeName: ""
 
+# How the server is reachable. Terraria speaks raw TCP on one port, so a regular HTTP
+# Ingress does not apply. Pick one:
+#   - service.type: LoadBalancer  -> cloud / MetalLB assigns an external IP
+#   - service.type: NodePort      -> reachable on every node at service.nodePort
+#   - service.type: ClusterIP     -> pair with ingress.traefik or your own objects in extraObjects
 service:
   type: ClusterIP
   port: 7777
   targetPort: 7777
+  # Fixed node port when type is NodePort (30000-32767). Leave empty for a random one.
+  nodePort: ""
+  # e.g. metallb.io/loadBalancerIPs or cloud provider annotations
+  annotations: {}
+  # Optional static IP for type LoadBalancer
+  loadBalancerIP: ""
+  externalTrafficPolicy: ""
 
-# Exposing the server outside the cluster.
-# Terraria speaks raw TCP, so a regular HTTP Ingress does not apply. Options:
-#   - service.type: LoadBalancer or NodePort (works everywhere, no ingress controller needed)
-#   - ingress.traefik: Traefik IngressRouteTCP on a dedicated TCP entrypoint
-#   - ingress.nginx: ingress-nginx TCP passthrough via its tcp-services ConfigMap
 ingress:
+  # Traefik IngressRouteTCP on a dedicated TCP entrypoint (Traefik must define it)
   traefik:
-    # Create a Traefik IngressRouteTCP
     enabled: true
     entryPoint: terraria
     port: 7777
 
-  nginx:
-    # Create the tcp-services ConfigMap used by ingress-nginx to expose TCP ports.
-    # The controller must run with --tcp-services-configmap=<namespace>/<name> and its
-    # Service must publish externalPort. If the ConfigMap already exists (e.g. managed by the
-    # ingress-nginx chart), leave this disabled and add the entry there instead:
-    #   data:
-    #     "7777": "<release namespace>/<release fullname>:7777"
-    enabled: false
-    configMapName: tcp-services
-    namespace: ingress-nginx
-    # Port exposed on the ingress-nginx controller
-    externalPort: 7777
-    # Enable PROXY protocol towards the server (Terraria does not understand it; keep false)
-    proxyProtocol: false
-
+# Additional Kubernetes objects rendered as-is (templating with {{ }} is supported), for
+# ingress controllers or anything else this chart does not model. Entries may be YAML
+# objects or multi-line strings. Example for ingress-nginx TCP passthrough:
+#
+# extraObjects:
+#   - apiVersion: v1
+#     kind: ConfigMap
+#     metadata:
+#       name: tcp-services
+#       namespace: ingress-nginx
+#     data:
+#       "7777": "{{ .Release.Namespace }}/{{ include \"terraria-server.fullname\" . }}:7777"
+extraObjects: []
 
 resources:
   limits:
