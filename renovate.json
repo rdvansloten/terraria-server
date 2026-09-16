@@ -9,7 +9,8 @@
   "enabledManagers": [
     "dockerfile",
     "github-actions",
-    "custom.regex"
+    "custom.regex",
+    "pip_requirements"
   ],
   "schedule": [
     "before 6am"
@@ -57,6 +58,14 @@
         "major"
       ],
       "enabled": false
+    },
+    {
+      "description": "Python test dependencies are pinned exactly so every release becomes a PR",
+      "matchManagers": [
+        "pip_requirements"
+      ],
+      "rangeStrategy": "pin",
+      "groupName": "python test dependencies"
     }
   ],
   "customManagers": [
@@ -105,5 +114,9 @@
         "{ \"releases\": $map($, function($v) { { \"version\": $replace($v, /^terraria-server-(\\d+)\\.zip$/, \"$1\") } }), \"homepage\": \"https://terraria.org\", \"sourceUrl\": \"https://terraria.org/api/download/pc-dedicated-server\" }"
       ]
     }
-  }
+  },
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**"
+  ]
 }
