@@ -6,8 +6,8 @@ for `linux/amd64`, `linux/arm64` and `linux/arm/v7`.
 
 | Flavor | Directory | Tags | Notes |
 |--------|-----------|------|-------|
-| Vanilla | [`vanilla/`](vanilla) | `1458`, `1.4.5.8`, `latest` | Official dedicated server from terraria.org. Rebuilt automatically when a new version is released |
-| TShock | [`tshock/`](tshock) | `tshock-6.1.0`, `tshock-latest` | [TShock](https://github.com/Pryaxis/TShock) server on .NET 9. Version bumps come in through Renovate |
+| Vanilla | [`images/vanilla/`](images/vanilla) | `1458`, `1.4.5.8`, `latest` | Official dedicated server from terraria.org. Rebuilt automatically when a new version is released |
+| TShock | [`images/tshock/`](images/tshock) | `tshock-6.1.0`, `tshock-latest` | [TShock](https://github.com/Pryaxis/TShock) server on .NET 9. Version bumps come in through Renovate |
 
 Both images run as user `terraria` (uid/gid 999) with data under `/terraria`:
 
@@ -60,9 +60,10 @@ ownership, world creation and clean logs. The same suite runs in CI for all thre
 
 ## Automation
 
-- `auto-update-vanilla.yaml` checks terraria.org daily for a new dedicated server release,
-  tests it, pushes the multi-arch image and commits the version bump.
-- `build-tshock.yaml` tests TShock changes on pull requests and publishes on merge.
+- `auto-update-vanilla.yaml` checks terraria.org daily for a new dedicated server release and, if it
+  is missing on Docker Hub, runs `build-vanilla.yaml` for it and commits the version bump.
+- `build-vanilla.yaml` and `build-tshock.yaml` build every platform once into a registry on the runner,
+  test each platform from it, and push the tested manifest to Docker Hub only on `main`.
 - Renovate tracks TShock releases, the base images and GitHub Actions versions.
 
 ## License

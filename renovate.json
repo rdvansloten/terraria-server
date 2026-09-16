@@ -3,7 +3,8 @@
   "extends": [
     "config:recommended",
     "docker:pinDigests",
-    "helpers:pinGitHubActionDigests"
+    "helpers:pinGitHubActionDigests",
+    "customManagers:githubActionsVersions"
   ],
   "enabledManagers": [
     "dockerfile",
@@ -47,10 +48,10 @@
   ],
   "customManagers": [
     {
-      "description": "Track TShock releases for ARG TSHOCK_VERSION in tshock/Dockerfile",
+      "description": "Track TShock releases for ARG TSHOCK_VERSION in images/tshock/Dockerfile",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^tshock/Dockerfile$/"
+        "/^images/tshock/Dockerfile$/"
       ],
       "matchStrings": [
         "ARG TSHOCK_VERSION=\"(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\""

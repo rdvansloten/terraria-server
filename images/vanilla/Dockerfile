@@ -44,7 +44,7 @@ LABEL org.opencontainers.image.version="$TERRARIA_SERVER_VERSION"
 LABEL org.opencontainers.image.authors="R.D. van Sloten <rdvansloten@outlook.com>"
 LABEL org.opencontainers.image.documentation="Container image for Terraria Server."
 LABEL org.opencontainers.image.url="https://hub.docker.com/r/rdvansloten/terraria-server"
-LABEL org.opencontainers.image.source="https://github.com/rdvansloten/terraria-server/blob/main/vanilla/Dockerfile"
+LABEL org.opencontainers.image.source="https://github.com/rdvansloten/terraria-server/blob/main/images/vanilla/Dockerfile"
 
 
 # Environment variables

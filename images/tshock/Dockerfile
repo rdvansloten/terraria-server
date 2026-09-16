@@ -54,7 +54,7 @@ ARG PLUGIN_PATH
 LABEL org.opencontainers.image.authors="Rudy van Sloten"
 LABEL org.opencontainers.image.url="https://hub.docker.com/r/rdvansloten/terraria-server"
 LABEL org.opencontainers.image.documentation="Container image for TShock Terraria Server."
-LABEL org.opencontainers.image.source="https://github.com/rdvansloten/terraria-server/blob/main/tshock/Dockerfile"
+LABEL org.opencontainers.image.source="https://github.com/rdvansloten/terraria-server/blob/main/images/tshock/Dockerfile"
 LABEL org.opencontainers.image.version="$TSHOCK_VERSION"
 
 # Environment variables
