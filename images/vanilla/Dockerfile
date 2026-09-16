@@ -5,7 +5,7 @@ ARG CONFIG_FILENAME="serverconfig.txt"
 ARG LOG_PATH="/terraria/logs"
 ARG ADDITIONAL_ARGS
 
-FROM debian:trixie-slim AS base
+FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS base
 
 ARG TERRARIA_SERVER_VERSION
 ARG TERRARIA_SERVER_FILENAME="terraria-server-${TERRARIA_SERVER_VERSION}.zip"
@@ -29,7 +29,7 @@ RUN unzip "/$TERRARIA_SERVER_FILENAME" -d "/tmp/terraria/" \
 # Copy serverconfig from repository config folder
 COPY config/${CONFIG_FILENAME} ${CONFIG_PATH}/${CONFIG_FILENAME}
 
-FROM debian:trixie-slim
+FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
 
 # Inherited arguments
 ARG TARGETARCH
