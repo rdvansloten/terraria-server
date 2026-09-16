@@ -89,11 +89,14 @@ existing release with the defaults would fail on the selector and create new, em
 Pin the name instead:
 
 ```bash
-helm upgrade terraria charts/terraria-server -n terraria --set nameOverride=terraria
+helm upgrade terraria charts/terraria-server -n terraria \
+  --set nameOverride=terraria --set ingress.traefik.enabled=true
 ```
 
-With `nameOverride=terraria` the rendered manifests are identical to the previous chart apart
-from the chart labels and the removed `PASSWORD` environment variable (which the image never read).
+The previous chart always created the Traefik `IngressRouteTCP`; it is now opt-in, hence the
+second flag. With both set the rendered manifests match the previous chart apart from the chart
+labels, the removed unused `PASSWORD`, `MAXPLAYERS` and `PORT` environment variables, and the
+new config init container.
 
 ## Values
 
@@ -117,7 +120,7 @@ from the chart labels and the removed `PASSWORD` environment variable (which the
 | `service.nodePort` | `""` | Fixed node port for `NodePort` |
 | `service.loadBalancerIP` | `""` | Static IP for `LoadBalancer` |
 | `service.annotations` | `{}` | Service annotations (MetalLB, cloud providers) |
-| `ingress.traefik.enabled` | `true` | Create a Traefik `IngressRouteTCP` |
+| `ingress.traefik.enabled` | `false` | Create a Traefik `IngressRouteTCP` |
 | `ingress.traefik.entryPoint` | `terraria` | Traefik TCP entrypoint name |
 | `extraObjects` | `[]` | Additional manifests (objects or strings), templated with `tpl` |
 | `resources` | 500m / 2Gi requests, 4Gi limit | Container resources |

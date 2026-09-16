@@ -1,11 +1,11 @@
 # Default values for terraria-server
 image:
   repository: docker.io/rdvansloten/terraria-server
-  # Vanilla Terraria server (the default). Kept in sync with images/vanilla/Dockerfile by Renovate.
+  # Vanilla Terraria server (the default)
   # renovate: datasource=custom.terraria-server depName=terraria-server versioning=loose
   tag: "1458"
-  # To run TShock instead, comment out the tag above and use this one. Also kept current by
-  # Renovate. Then configure the server through tshock.config rather than terraria.config.
+  # To run TShock instead, comment out the tag: above and use the one below. 
+  # Then configure the server through tshock.config rather than terraria.config.
   # renovate: datasource=github-releases depName=Pryaxis/TShock versioning=semver-coerced
   # tag: "6.1.0-tshock"
   pullPolicy: Always
@@ -15,8 +15,6 @@ nameOverride: ""
 fullnameOverride: ""
 
 # Terraria server configuration.
-# Gameplay settings such as password, max players and port come from serverconfig.txt on the
-# config volume (or TShock's config.json), not from here.
 terraria:
   # World file name inside the world volume
   world: "Terraria.wld"
@@ -119,9 +117,10 @@ service:
   externalTrafficPolicy: ""
 
 ingress:
-  # Traefik IngressRouteTCP on a dedicated TCP entrypoint (Traefik must define it)
+  # Traefik IngressRouteTCP on a dedicated TCP entrypoint (Traefik must define it).
+  # Off by default; without an ingress controller use service.type LoadBalancer or NodePort.
   traefik:
-    enabled: true
+    enabled: false
     entryPoint: terraria
     port: 7777
 
@@ -141,9 +140,9 @@ extraObjects: []
 
 resources:
   limits:
-    memory: 4Gi
+    memory: 2Gi
   requests:
-    cpu: 500m
+    cpu: 1000m
     memory: 2Gi
 
 # Security Context - the image runs as user terraria (uid/gid 999)
