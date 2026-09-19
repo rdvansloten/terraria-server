@@ -46,7 +46,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "kubectl and a cluster with the --image already loaded, e.g. a kind cluster)",
     )
     group.addoption("--release", default="tt", help="Helm release name for the chart tests")
-    group.addoption("--namespace", default="default", help="Namespace for the chart tests")
+    group.addoption(
+        "--namespace",
+        default="",
+        help="Namespace for the chart tests; empty generates a unique one per run so PVCs are "
+        "never reused, even on a persistent cluster (the namespace is deleted afterwards)",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:

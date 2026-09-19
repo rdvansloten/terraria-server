@@ -76,11 +76,14 @@ spec:
             - name: terraria
               containerPort: {{ .Values.terraria.port }}
               protocol: TCP
-          # World generation on first start can take a while, so allow a long ramp before ready.
-          readinessProbe:
+          # A startup probe, not a readiness probe: it checks the port only until it first opens
+          # (world generation can take a while), marks the pod ready, then stops. A periodic
+          # tcpSocket readiness probe would keep opening and closing connections to the server,
+          # and vanilla Terraria has a netcode race on connection teardown (see tools/crash_repro.py)
+          # that such churn can trigger, so we probe once at startup and never touch the socket again.
+          startupProbe:
             tcpSocket:
               port: terraria
-            initialDelaySeconds: 15
             periodSeconds: 10
             failureThreshold: 60
           env:
