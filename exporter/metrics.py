@@ -1,8 +1,4 @@
-"""Assemble Prometheus metrics from the parsed world and the log state.
-
-A single custom collector reads the latest snapshot on each scrape, so values always reflect the
-most recent world parse and log tail without per-metric bookkeeping.
-"""
+"""Prometheus collector assembled from the parsed world and log state."""
 
 from __future__ import annotations
 
@@ -11,7 +7,6 @@ from prometheus_client.core import GaugeMetricFamily, CounterMetricFamily
 
 class TerrariaCollector:
     def __init__(self, snapshot):
-        # snapshot() returns a dict: {world, logs, world_file_bytes, world_save_age, last_parsed, up}
         self._snapshot = snapshot
 
     def collect(self):
@@ -19,7 +14,7 @@ class TerrariaCollector:
         w = snap["world"]
         logs = snap["logs"]
 
-        # ---- identity as an info metric (labels, not stats) ----
+
         info = GaugeMetricFamily(
             "terraria_world_info", "World identity; value is always 1",
             labels=["world_name", "seed", "game_version", "format_version", "worldgen_version"],

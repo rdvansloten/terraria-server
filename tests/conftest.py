@@ -1,12 +1,4 @@
-"""Shared fixtures for the Terraria server image tests.
-
-The tests are image-agnostic: point them at any image built from this repository with
-``--image`` and they start it in TEST_MODE (auto-creating a world), wait until the server
-listens, then run the checks against the running container.
-
-    pytest tests --image terraria-server:vanilla --flavor vanilla
-    pytest tests --image terraria-server:tshock  --flavor tshock --platform linux/arm64
-"""
+"""Shared fixtures for the Terraria server image tests."""
 
 from __future__ import annotations
 
@@ -129,7 +121,7 @@ def _host_port(name: str) -> tuple[str, int]:
     result = docker("port", name, f"{SERVER_PORT}/tcp", check=False)
     out = result.stdout.strip().splitlines()
     if result.returncode != 0 or not out:
-        return "127.0.0.1", 0  # container already exited; there is no mapping to report
+        return "127.0.0.1", 0
     for line in out:
         host, _, port = line.rpartition(":")
         if "." in host:  # prefer the IPv4 binding

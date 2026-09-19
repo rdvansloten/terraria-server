@@ -1,14 +1,4 @@
-"""Terraria Prometheus exporter.
-
-Periodically parses the world file (preferring the stable .bak, retrying up to 10 times on a torn
-read during a save), tails the server log for live activity, and serves everything on /metrics.
-
-Configuration via environment:
-  WORLD_PATH            path to the .wld (default /terraria/.local/share/Terraria/Worlds/Terraria.wld)
-  LOG_FILE             server log file to tail (optional; also reads stdin if LOG_STDIN=true)
-  METRICS_PORT         listen port (default 9150)
-  PARSE_INTERVAL       seconds between world parses (default 30)
-"""
+"""Terraria Prometheus exporter: parse the world, tail the log, serve /metrics."""
 
 from __future__ import annotations
 
@@ -33,7 +23,6 @@ class Exporter:
         self._lock = threading.Lock()
 
     def parse_world_once(self) -> None:
-        # Prefer the backup: it is the previous save and is not being written right now.
         candidates = [self.world_path + ".bak", self.world_path]
         for path in candidates:
             if not os.path.exists(path):

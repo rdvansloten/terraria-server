@@ -11,7 +11,6 @@ WORLD_DIR="/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds"
 WORLD_PATH="${WORLD_DIR}/${WORLD_FILENAME}"
 CONFIG_FILE="${CONFIG_PATH}/${CONFIG_FILENAME}"
 
-# Seed the default config when the config directory (usually a mounted volume) has none yet
 if [ ! -f "$CONFIG_FILE" ]; then
   if cp "${TERRARIA_SERVER_PATH}/${CONFIG_FILENAME}.default" "$CONFIG_FILE" 2>/dev/null; then
     printf "No %s found in %s, seeded the default. Edit it and restart to apply changes.\n" "$CONFIG_FILENAME" "$CONFIG_PATH"
@@ -21,7 +20,6 @@ if [ ! -f "$CONFIG_FILE" ]; then
   fi
 fi
 
-# Resolve world generation settings: environment variables override serverconfig.txt
 cfg() { sed -nE "s/^$1=(.*)$/\\1/p" "$CONFIG_FILE" 2>/dev/null | tail -1; }
 AUTOCREATE="${AUTOCREATE:-$(cfg autocreate)}"
 SEED="${SEED:-$(cfg seed)}"
@@ -29,7 +27,6 @@ DIFFICULTY="${DIFFICULTY:-$(cfg difficulty)}"
 WORLD_NAME="${WORLD_NAME:-$(cfg worldname)}"
 WORLD_NAME="${WORLD_NAME:-${WORLD_FILENAME%.wld}}"
 
-# TEST_MODE: create a small world with a random seed when none exists
 if [ "$TEST_MODE" = "true" ]; then
   AUTOCREATE=1
   : "${SEED:=$(od -A n -t d -N 3 /dev/urandom | tr -d ' ')}"
@@ -44,9 +41,6 @@ printf "Config file   : %s\n" "${CONFIG_PATH}/${CONFIG_FILENAME}"
 printf "Autocreate    : %s\n" "${AUTOCREATE:-off}"
 printf "Wait for world: %s\n" "${WAIT_FOR_WORLD:-false}"
 
-# Build the effective config the server actually reads: the volume config with the resolved world
-# generation settings and the join password applied. Terraria gives the -config file precedence
-# over command line flags, so overrides must land in this file. It is private (mode 600) and
 # lives on tmpfs, so the volume never sees the password.
 EFFECTIVE_CONFIG="/tmp/serverconfig.effective.txt"
 umask 077
@@ -74,11 +68,8 @@ if [ $# -gt 0 ]; then
   printf "Running terraria-server with additional arguments: %s\n" "$*"
 fi
 
-# Make sure the world directory exists so a world can be copied in (kubectl cp needs the parent)
 mkdir -p "$WORLD_DIR" 2>/dev/null || true
 
-# Wait for a world file to be copied in (e.g. kubectl cp / docker cp). Only start once the
-# file has stopped growing so a half-copied world is never opened.
 if [ ! -f "$WORLD_PATH" ] && [ "$WAIT_FOR_WORLD" = "true" ]; then
   printf "Waiting for world file: %s\n" "$WORLD_PATH"
   printf "Import an existing world with, for example:\n"
@@ -110,7 +101,6 @@ elif [ -n "$AUTOCREATE" ]; then
   esac
   printf "No existing world found. Creating world '%s' (size %s%s%s).\n" "$WORLD_NAME" "$AUTOCREATE" \
     "${SEED:+, seed $SEED}" "${DIFFICULTY:+, difficulty $DIFFICULTY}"
-  # Terraria refuses a missing -world without -autocreate on the command line as well
   exec $SERVER_BINARY -config "$EFFECTIVE_CONFIG" -logpath "$LOG_PATH" -world "$WORLD_PATH" \
     -autocreate "$AUTOCREATE" -worldname "$WORLD_NAME" ${SEED:+-seed "$SEED"} ${DIFFICULTY:+-difficulty "$DIFFICULTY"} "$@"
 

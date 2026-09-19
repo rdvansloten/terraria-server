@@ -4,10 +4,8 @@ SERVER_BINARY="./TShock.Server"
 WORLD_DIR="/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds"
 WORLD_PATH="${WORLD_DIR}/${WORLD_FILENAME}"
 TSHOCK_CONFIG_FILE="${CONFIG_PATH}/config.json"
-# World generation settings live in Terraria's serverconfig.txt; everything else in TShock's config.json
 CONFIG_FILE="${CONFIG_PATH}/serverconfig.txt"
 
-# Seed the default world generation config when the config volume has none yet
 if [ ! -f "$CONFIG_FILE" ]; then
   if cp "${TSHOCK_SERVER_PATH}/serverconfig.txt.default" "$CONFIG_FILE" 2>/dev/null; then
     printf "No serverconfig.txt found in %s, seeded the default. Edit it and restart to apply changes.\n" "$CONFIG_PATH"
@@ -17,7 +15,6 @@ if [ ! -f "$CONFIG_FILE" ]; then
   fi
 fi
 
-# Resolve world generation settings: environment variables override serverconfig.txt
 cfg() { sed -nE "s/^$1=(.*)$/\\1/p" "$CONFIG_FILE" 2>/dev/null | tail -1; }
 AUTOCREATE="${AUTOCREATE:-$(cfg autocreate)}"
 SEED="${SEED:-$(cfg seed)}"
@@ -25,7 +22,6 @@ DIFFICULTY="${DIFFICULTY:-$(cfg difficulty)}"
 WORLD_NAME="${WORLD_NAME:-$(cfg worldname)}"
 WORLD_NAME="${WORLD_NAME:-${WORLD_FILENAME%.wld}}"
 
-# TEST_MODE: create a small world with a random seed when none exists
 if [ "$TEST_MODE" = "true" ]; then
   AUTOCREATE=1
   : "${SEED:=$(od -A n -t d -N 3 /dev/urandom | tr -d ' ')}"
@@ -42,7 +38,6 @@ printf "Plugin path   : %s\n" "$PLUGIN_PATH"
 printf "Autocreate    : %s\n" "${AUTOCREATE:-off}"
 printf "Wait for world: %s\n" "${WAIT_FOR_WORLD:-false}"
 
-# When TShock is configured for MySQL storage, wait for the database before starting
 if [ -f "$TSHOCK_CONFIG_FILE" ] && [ "$(jq -r '.Settings.StorageType' "$TSHOCK_CONFIG_FILE")" = "mysql" ]; then
   DATABASE_HOST=$(jq -r '.Settings.MySqlHost' "$TSHOCK_CONFIG_FILE" | cut -f1 -d':')
   DATABASE_PORT=$(jq -r '.Settings.MySqlHost' "$TSHOCK_CONFIG_FILE" | cut -f2 -d':')
@@ -55,9 +50,6 @@ if [ -f "$TSHOCK_CONFIG_FILE" ] && [ "$(jq -r '.Settings.StorageType' "$TSHOCK_C
   printf "Database server is reachable.\n"
 fi
 
-# Join password. TShock ignores Terraria's password= and -password; the only thing it honors is
-# Settings.ServerPassword in its own config.json, so TERRARIA_PASSWORD is written there on every
-# start (TShock persists that setting on the config volume by design).
 if [ -n "$TERRARIA_PASSWORD" ]; then
   [ -f "$TSHOCK_CONFIG_FILE" ] || printf '{"Settings":{}}\n' > "$TSHOCK_CONFIG_FILE"
   tmp_config="$(mktemp)"
@@ -75,11 +67,8 @@ if [ $# -gt 0 ]; then
   printf "Running TShock server with additional arguments: %s\n" "$*"
 fi
 
-# Make sure the world directory exists so a world can be copied in (kubectl cp needs the parent)
 mkdir -p "$WORLD_DIR" 2>/dev/null || true
 
-# Wait for a world file to be copied in (e.g. kubectl cp / docker cp). Only start once the
-# file has stopped growing so a half-copied world is never opened.
 if [ ! -f "$WORLD_PATH" ] && [ "$WAIT_FOR_WORLD" = "true" ]; then
   printf "Waiting for world file: %s\n" "$WORLD_PATH"
   printf "Import an existing world with, for example:\n"
@@ -99,7 +88,6 @@ if [ ! -f "$WORLD_PATH" ] && [ "$WAIT_FOR_WORLD" = "true" ]; then
   printf "World file received (%s bytes).\n" "$size"
 fi
 
-# TShock opens GeoIP.dat read-write; GeoIP.dat in the server dir is a symlink to this tmpfs copy
 if [ ! -f /tmp/GeoIP.dat ]; then
   cp "${TSHOCK_SERVER_PATH}/GeoIP.dat.orig" /tmp/GeoIP.dat && chmod 600 /tmp/GeoIP.dat
 fi

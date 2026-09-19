@@ -2,11 +2,7 @@
 image:
   repository: docker.io/rdvansloten/terraria-server
   # Vanilla Terraria server (the default)
-  # renovate: datasource=custom.terraria-server depName=terraria-server versioning=loose
   tag: "1458"
-  # To run TShock instead, comment out the tag: above and use the one below. 
-  # Then configure the server through tshock.config rather than terraria.config.
-  # renovate: datasource=github-releases depName=Pryaxis/TShock versioning=semver-coerced
   # tag: "6.1.0-tshock"
   pullPolicy: Always
 
@@ -14,34 +10,20 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# Terraria server configuration. Everything the server itself understands lives in
-# serverconfig.txt, provided through terraria.config. The other keys are needed by the chart
 # and the image, not by Terraria.
 terraria:
   # World file name inside the world volume
   world: "Terraria.wld"
-  # Container port the server listens on (keep in sync with port= in the config)
   port: 7777
-  # Join password, managed as a Kubernetes Secret and passed to the server as TERRARIA_PASSWORD,
-  # which overrides password= in serverconfig.txt (and TShock's ServerPassword when that is empty).
   password:
     enabled: true
-    # Explicit password. Leave empty to generate a random one on first install; it is then kept
-    # across upgrades, and editing the Secret by hand is respected too.
     value: ""
-    # Use an existing Secret (key: password) instead of creating one
     existingSecret: ""
-  # Instead of generating a world, keep the pod waiting until a world file is copied in.
-  # The install notes print the kubectl cp command. Safe to leave on: once the world is on the
   # volume the server starts normally.
   waitForWorld: false
-  # Contents of serverconfig.txt. When set, the file is written to the config volume on every
-  # start, so changes here win over edits made on the volume. When empty, the image default
-  # (which generates a medium world when none exists) is seeded once onto an empty volume.
   # config: |
   #   # Max number of players allowed on the server, 1 to 255
   #   maxplayers=8
-  #   # Port the server listens on (keep in sync with terraria.port)
   #   port=7777
   #   # Password required to join; leave empty for none
   #   password=changeme
@@ -51,15 +33,12 @@ terraria:
   #   secure=1
   #   # Server language code
   #   language=en-US
-  #   # World generation when the world file does not exist: 1 small, 2 medium, 3 large
   #   autocreate=2
   #   # 0 Classic, 1 Expert, 2 Master, 3 Journey
   #   difficulty=0
   #   #seed=
   config: ""
 
-# TShock image only (image.tag: <version>-tshock). Same semantics as terraria.config: when set, the
-# file is written to the config volume on every start. Leave empty to let TShock generate and
 # manage its own config.json / sscconfig.json.
 tshock:
   # Contents of config.json
@@ -68,11 +47,8 @@ tshock:
   sscConfig: ""
 
 # Storage for world data, config, and logs.
-# Disabling any of these backs the path with an emptyDir that is wiped whenever the pod is
-# recreated, including on every helm upgrade. Only do this for throwaway test servers.
 persistence:
   # Global defaults for all PVCs.
-  # Empty uses the cluster's default StorageClass. Set a class name to pin one (e.g. nfs-client).
   storageClassName: ""
   accessMode: ReadWriteOnce
   size: 10Gi
@@ -107,34 +83,23 @@ persistence:
     selector: {}
     volumeName: ""
 
-# How the server is reachable. Terraria speaks raw TCP on one port, so a regular HTTP
 # Ingress does not apply. Pick one:
-#   - service.type: LoadBalancer  -> cloud / MetalLB assigns an external IP
-#   - service.type: NodePort      -> reachable on every node at service.nodePort
-#   - service.type: ClusterIP     -> pair with ingress.traefik or your own objects in extraObjects
 service:
   type: ClusterIP
   port: 7777
   targetPort: 7777
-  # Fixed node port when type is NodePort (30000-32767). Leave empty for a random one.
   nodePort: ""
-  # e.g. metallb.io/loadBalancerIPs or cloud provider annotations
   annotations: {}
   # Optional static IP for type LoadBalancer
   loadBalancerIP: ""
   externalTrafficPolicy: ""
 
 ingress:
-  # Traefik IngressRouteTCP on a dedicated TCP entrypoint (Traefik must define it).
-  # Off by default; without an ingress controller use service.type LoadBalancer or NodePort.
   traefik:
     enabled: false
     entryPoint: terraria
     port: 7777
 
-# Additional Kubernetes objects rendered as-is (templating with {{ }} is supported), for
-# ingress controllers or anything else this chart does not model. Entries may be YAML
-# objects or multi-line strings. Example for ingress-nginx TCP passthrough:
 #
 # extraObjects:
 #   - apiVersion: v1
@@ -143,7 +108,6 @@ ingress:
 #       name: tcp-services
 #       namespace: ingress-nginx
 #     data:
-#       "7777": "{{ .Release.Namespace }}/{{ include \"terraria-server.fullname\" . }}:7777"
 extraObjects: []
 
 resources:
@@ -153,13 +117,11 @@ resources:
     cpu: 1000m
     memory: 2Gi
 
-# Security Context - the image runs as user terraria (uid/gid 999)
 podSecurityContext:
   fsGroup: 999
   seccompProfile:
     type: RuntimeDefault
 
-# The image is built for this: everything the server writes goes to the volumes below or to the
 # tmpfs mounts at /tmp and /terraria/.local/share/Terraria.
 securityContext:
   allowPrivilegeEscalation: false
@@ -170,8 +132,6 @@ securityContext:
   runAsUser: 999
   runAsNonRoot: true
 
-# Prometheus metrics via a sidecar exporter that reads the world file (progression, hardmode,
-# altars, identity) and optionally tails the server log (players, deaths, boss/invasion events).
 metrics:
   enabled: false
   image:
@@ -179,7 +139,6 @@ metrics:
     tag: "latest"
     pullPolicy: IfNotPresent
   port: 9150
-  # Tail the server log directory for live player/activity metrics. World metrics work regardless.
   tailLogs: true
   serviceMonitor:
     enabled: false          # needs the Prometheus Operator CRD

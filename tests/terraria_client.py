@@ -1,9 +1,4 @@
-"""A minimal Terraria network client, enough to walk through the join handshake.
-
-Packets are little-endian: uint16 total length (including these two bytes), one type byte, payload.
-Strings are 7-bit-length-prefixed UTF-8. Only the packets needed to reach the password prompt are
-implemented; the layouts match Terraria 1.4.5 and TShock 6.1's GetDataHandlers.
-"""
+"""A minimal Terraria network client, enough to walk through the join handshake."""
 
 from __future__ import annotations
 
@@ -13,7 +8,7 @@ import time
 
 # Packet types (client -> server unless noted)
 CONNECT_REQUEST = 1
-DISCONNECT = 2  # server -> client, carries a NetworkText reason
+DISCONNECT = 2
 CONTINUE_CONNECTING = 3  # server -> client, assigns the player slot
 PLAYER_INFO = 4
 REQUEST_WORLD_DATA = 6  # "ContinueConnecting2"
@@ -23,10 +18,8 @@ PASSWORD_RESPONSE = 38
 CLIENT_UUID = 68
 VERSION_MISMATCH = "LegacyMultiplayer.4"
 
-# Network protocol version per Terraria release, as sent in the ConnectRequest version string.
 KNOWN_PROTOCOLS = {"1.4.5.8": 326, "1.4.5.6": 319}
 
-# Disconnect reasons arrive as localization keys from vanilla Terraria
 INCORRECT_PASSWORD = "LegacyMultiplayer.1"
 
 
@@ -79,10 +72,7 @@ class TerrariaClient:
         return data
 
     def recv_until(self, wanted: set[int], timeout: float = 5.0) -> tuple[int, str]:
-        """Read packets until one whose type is in `wanted`, or a Disconnect, arrives, skipping
-        anything else. TShock interleaves informational packets (e.g. an "authenticated" chat
-        message, type 82) before the packet that signals the outcome, so callers must not assume
-        the very next packet is the answer. Returns (type, disconnect reason or "")."""
+        """Read packets until one whose type is in `wanted`, or a Disconnect, arrives, skipping"""
         self.sock.settimeout(timeout)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -115,31 +105,23 @@ class TerrariaClient:
         payload += bytes([0])  # hair dye
         payload += struct.pack("<H", 0)  # hide visual flags
         payload += bytes([0])  # hide misc
-        payload += bytes([200, 150, 100] * 7)  # hair, skin, eye, shirt, undershirt, pants, shoe colors
-        payload += bytes([0, 0, 0])  # difficulty/extra bits, torch flags, misc bits
+        payload += bytes([200, 150, 100] * 7)
+        payload += bytes([0, 0, 0])
         self.send(PLAYER_INFO, payload)
 
     def request_world_data(self) -> tuple[int, str]:
-        """Send RequestWorldData; return the outcome (PASSWORD_REQUIRED if a password is needed,
-        WORLD_INFO if not), skipping any informational packets."""
+        """Send RequestWorldData; return the outcome (PASSWORD_REQUIRED if a password is needed,"""
         self.send(REQUEST_WORLD_DATA)
         return self.recv_until({PASSWORD_REQUIRED, WORLD_INFO})
 
     def send_password(self, password: str) -> tuple[int, str]:
-        """Send PasswordResponse; return the outcome: CONTINUE_CONNECTING (vanilla) or WORLD_INFO
-        (TShock) on success, DISCONNECT on rejection. Informational packets are skipped."""
+        """Send PasswordResponse; return the outcome: CONTINUE_CONNECTING (vanilla) or WORLD_INFO"""
         self.send(PASSWORD_RESPONSE, tstring(password))
         return self.recv_until({CONTINUE_CONNECTING, WORLD_INFO})
 
 
 def discover_protocol(host: str, port: int, server_log: str, hint: int | None = None) -> int:
-    """Find the protocol version the server speaks.
-
-    TShock prints it at startup ("Protocol v1.4.5.6 (319)"). Vanilla does not, but rejects a wrong
-    version instantly with LegacyMultiplayer.4 without occupying a player slot, so we probe upward
-    from the hint (or the highest known version) until the reply changes. The first accepted
-    connection is closed right away.
-    """
+    """Find the protocol version the server speaks."""
     import re
 
     match = re.search(r"Protocol v[\d.]+ \((\d+)\)", server_log)

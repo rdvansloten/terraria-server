@@ -58,13 +58,10 @@ ENV TARGETARCH="${TARGETARCH}"
 ENV ENTRYPOINT="entrypoint.sh"
 ENV ADDITIONAL_ARGS="$ADDITIONAL_ARGS"
 
-# Add terraria user and group to prevent needing to run the server as root (dangerous)
 RUN groupadd -r terraria \
     && useradd -u 999 -r -g terraria -d "/terraria" -s /bin/sh terraria \
     && mkdir -p "$TERRARIA_SERVER_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds" "$CONFIG_PATH" "$LOG_PATH"
 
-# Copy files from previous stage and repository. The default serverconfig.txt is also kept
-# next to the server binaries so the entrypoint can seed it into CONFIG_PATH when a volume
 # mounted there is empty.
 COPY --from=base --chown=terraria:terraria --chmod=0550 "${TERRARIA_SERVER_PATH}/" "${TERRARIA_SERVER_PATH}/"
 COPY --from=base --chown=terraria:terraria --chmod=0550 "${CONFIG_PATH}/" "${CONFIG_PATH}/"
@@ -76,8 +73,6 @@ RUN chown -R terraria:terraria "/terraria" "$TERRARIA_SERVER_PATH" \
     && chmod -R 770 "$LOG_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}" \
     && chmod -R 770 "$CONFIG_PATH"
 
-# Only install mono libraries output by `monodis --assemblyref TerrariaServer.exe`
-# Reduces size by 40% compared to installing package 'mono-runtime'
 RUN if [ "${TARGETARCH}" = "arm64" ] || [ "${TARGETARCH}" = "arm" ]; then \
         apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
         ca-certificates \

@@ -28,9 +28,6 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:
-        # Seed or manage files on the config volume. With values-provided config the files are
-        # (over)written on every start; otherwise the image default serverconfig.txt is copied
-        # only if the volume has none yet (TShock generates its own config).
         - name: config
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -76,11 +73,6 @@ spec:
             - name: terraria
               containerPort: {{ .Values.terraria.port }}
               protocol: TCP
-          # Health is checked by looking for the listening socket in /proc/net/tcp, never by
-          # opening a connection to the server. vanilla Terraria has a netcode race on connection
-          # teardown (see tools/crash_repro.py), and a tcpSocket probe's connect-and-close feeds it,
-          # so the probe reads the kernel socket table instead. The startup probe gates readiness
-          # until the port is open (world generation can take a while); the liveness probe then
           # keeps it there. Port 7777 -> hex 1E61; state 0A is LISTEN.
           startupProbe:
             exec:
@@ -115,10 +107,8 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
-            # tmpfs for the private effective config, .NET extraction and TShock's GeoIP copy
             - name: tmp
               mountPath: /tmp
-            # Terraria writes favorites.json next to the Worlds directory
             - name: terraria-data
               mountPath: /terraria/.local/share/Terraria
             - name: terraria-world
@@ -164,8 +154,6 @@ spec:
               readOnly: true
             {{- end }}
         {{- end }}
-      # Disabled persistence falls back to emptyDir: data is lost when the pod is recreated
-      # (NOTES.txt warns loudly about this on install and upgrade).
       volumes:
         - name: tmp
           emptyDir:

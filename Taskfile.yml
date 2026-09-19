@@ -1,14 +1,8 @@
 # https://taskfile.dev
 #
-# One way to build and test, used locally and in CI. Images are built multi-arch with buildx into
-# a throwaway local registry, then each platform is pulled and tested, then the tested manifest is
-# promoted to Docker Hub. Override PLATFORMS for a fast single-arch local run:
 #
-#   task test:vanilla                          # all platforms (CI parity)
-#   PLATFORMS=linux/arm64 task test:vanilla    # just your arch, fast
 #   task test                                  # both images
 #   task build:tshock                          # build only
-#   task publish:vanilla                       # build, test, push (needs docker login)
 
 version: '3'
 

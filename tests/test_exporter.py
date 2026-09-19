@@ -1,8 +1,4 @@
-"""The exporter emits every metric it promises, with values set.
-
-Parses a real 1.4.5.8 world fixture, feeds representative log lines, renders the Prometheus
-exposition, and asserts every expected metric family is present and populated. No container needed.
-"""
+"""The exporter emits every metric it promises, with values set."""
 
 from __future__ import annotations
 
@@ -91,7 +87,7 @@ def test_world_state_values_are_set(exposition: str) -> None:
     assert s["terraria_world_height"] == 1200.0
     assert s["terraria_world_file_bytes"] > 0
     assert s["terraria_world_last_parsed_seconds"] == 1000.0
-    # difficulty/evil/hardmode/altars exist as numbers
+
     for name in ("terraria_difficulty", "terraria_evil_type", "terraria_hardmode", "terraria_altars_smashed"):
         assert name in s, name
 
@@ -102,7 +98,6 @@ def test_world_info_labels_are_populated(exposition: str) -> None:
     line = info[0]
     for label in ("world_name=", "seed=", "game_version=", "format_version=", "worldgen_version="):
         assert label in line, f"{label} missing from world_info"
-    # format_version reflects whatever the fixture is; assert it is a real number, not the exact one
     import re as _re
     m = _re.search(r'format_version="(\d+)"', line)
     assert m and int(m.group(1)) > 0

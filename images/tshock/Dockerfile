@@ -15,7 +15,6 @@ ARG TSHOCK_SERVER_PATH
 RUN apk add --no-cache curl unzip
 
 # Download and unpack TShock for the target architecture.
-# Release assets are named e.g. TShock-6.1.0-for-Terraria-1.4.5.6-linux-x64-Release.zip
 # and contain a single tar with the server files.
 RUN set -eux; \
     case "${TARGETARCH}" in \
@@ -66,21 +65,15 @@ ENV DEFAULT_TERRARIA_SERVER_PATH=".local/share/Terraria"
 ENV WORLD_FILENAME="Terraria.wld"
 ENV TARGETARCH="${TARGETARCH}"
 ENV ENTRYPOINT="entrypoint.sh"
-# Hardened defaults for a read-only root filesystem: the .NET single-file bundle's native
-# libraries are extracted into the image at build time (below) instead of at runtime, diagnostics
-# IPC sockets are off, and TShock's GeoIP.dat (which it opens read-write) is a symlink to a copy
 # the entrypoint places on tmpfs.
 ENV DOTNET_BUNDLE_EXTRACT_BASE_DIR="${TSHOCK_SERVER_PATH}/.net"
 ENV DOTNET_EnableDiagnostics="0"
 
-# jq: read StorageType/MySql settings from TShock config.json
-# mariadb-client: wait for the database before starting when using MySQL storage
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y --no-install-recommends \
         jq \
         mariadb-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Add terraria user and group to prevent needing to run the server as root (dangerous)
 RUN groupadd -r terraria \
     && useradd -u 999 -r -g terraria -d "/terraria" -s /bin/sh terraria \
     && mkdir -p "$TSHOCK_SERVER_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds" "$CONFIG_PATH" "$LOG_PATH" "$PLUGIN_PATH"
@@ -88,26 +81,20 @@ RUN groupadd -r terraria \
 # Copy files from previous stage and repository
 COPY --from=base --chown=terraria:terraria --chmod=0550 "${TSHOCK_SERVER_PATH}/" "${TSHOCK_SERVER_PATH}/"
 COPY --chown=terraria:terraria --chmod=0550 "$ENTRYPOINT" "${TSHOCK_SERVER_PATH}/${ENTRYPOINT}"
-# World generation defaults, seeded into CONFIG_PATH by the entrypoint when missing
 COPY --chown=terraria:terraria --chmod=0440 config/serverconfig.txt "${TSHOCK_SERVER_PATH}/serverconfig.txt.default"
 
 # Make terraria user owner over relevant paths.
-# TShock writes config.json, sscconfig.json and tshock.sqlite into CONFIG_PATH, so it must be writable.
 RUN mv "${TSHOCK_SERVER_PATH}/GeoIP.dat" "${TSHOCK_SERVER_PATH}/GeoIP.dat.orig" \
     && ln -s /tmp/GeoIP.dat "${TSHOCK_SERVER_PATH}/GeoIP.dat" \
-    # TerrariaServerAPI writes ServerLog.txt into the server directory; keep it with the other logs
     && ln -s "${LOG_PATH}/ServerLog.txt" "${TSHOCK_SERVER_PATH}/ServerLog.txt" \
     && chown -R terraria:terraria "/terraria" "$TSHOCK_SERVER_PATH" \
     && chmod -R 770 "$LOG_PATH" "$CONFIG_PATH" "$PLUGIN_PATH" "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}"
 
-# Pre-extract the single-file bundle so no executable tmpfs is needed at runtime. Any start
-# triggers the extraction before managed code runs; this one fails fast on the missing world.
 RUN cd "$TSHOCK_SERVER_PATH" \
     && (timeout 120 ./TShock.Server -world /nonexistent/none.wld -configpath /tmp/extract -logpath /tmp/extract >/dev/null 2>&1 || true) \
     && test -n "$(ls -A "${TSHOCK_SERVER_PATH}/.net/TShock.Server" 2>/dev/null)" \
     && chown -R terraria:terraria "${TSHOCK_SERVER_PATH}/.net" \
     && chmod -R u=rX,g=rX,o= "${TSHOCK_SERVER_PATH}/.net" \
-    # that start ran as root: remove everything it created outside the extraction dir
     && rm -rf /tmp/extract /tmp/GeoIP.dat "${LOG_PATH:?}"/* "${CONFIG_PATH:?}"/* /terraria/.local/share/Terraria/* \
     && mkdir -p "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}/Worlds" \
     && chown -R terraria:terraria "/terraria/${DEFAULT_TERRARIA_SERVER_PATH}" \
@@ -120,7 +107,6 @@ WORKDIR "/tshock-server"
 # Switch to terraria user
 USER terraria
 
-# Document default Terraria server port and TShock REST API port
 EXPOSE 7777 7878
 
 ENTRYPOINT [ "/bin/sh", "entrypoint.sh" ]

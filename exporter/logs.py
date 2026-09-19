@@ -1,18 +1,10 @@
-"""Parse the Terraria/TShock console log stream into counters and a live player gauge.
-
-Both server flavors print player join/leave lines, death broadcasts, boss and invasion
-announcements, and world-save lines to stdout (and to the log volume). TShock additionally logs
-authentication results. The patterns are best-effort and documented here; feed each log line to
-`LogState.feed`. Counters only ever increase; players_online is derived from joins minus leaves and
-is a best-effort live value.
-"""
+"""Parse the Terraria/TShock console log into counters and a live player gauge."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 
-# One representative pattern per event. Kept deliberately loose but anchored enough to avoid chat.
 JOIN = re.compile(r"^(?P<name>.+?) has joined\.$")
 LEAVE = re.compile(r"^(?P<name>.+?) has left\.$")
 SERVER_STARTED = re.compile(r"Server started")
@@ -23,7 +15,6 @@ INVASION = re.compile(r"(goblin army|pirate|Martian|Frost Legion|Pumpkin Moon|Fr
 LOGIN_OK = re.compile(r"authenticated successfully", re.IGNORECASE)
 LOGIN_BAD = re.compile(r"(failed to login|incorrect password|invalid password)", re.IGNORECASE)
 LOGIN_BANNED = re.compile(r"banned", re.IGNORECASE)
-# Death broadcasts are highly varied; match the common verbs Terraria uses.
 SERVER_VERSION = re.compile(r"Terraria Server v(?P<ver>\d+\.\d+\.\d+(?:\.\d+)?)")
 DEATH = re.compile(r"\b(was slain|was killed|got slain|has been slain|was eviscerated|was murdered|didn't|watched .* die|felt|was licked)\b", re.IGNORECASE)
 

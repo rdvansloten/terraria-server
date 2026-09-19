@@ -52,17 +52,9 @@ def protected(request: pytest.FixtureRequest):
 
 @pytest.mark.flavor("vanilla")
 def test_vanilla_password_login_flow(protected: Server) -> None:
-    """Vanilla prompts for the password right after ConnectRequest.
-
-    Ordering matters here. Vanilla's netcode has a race when a kicked client's socket is torn down
-    (see tools/crash_repro.py), which a rejection-then-immediate-reconnect can hit. So this test
-    does the accepted login first, confirms the server is healthy, then sends the wrong password
-    as its final action: the rejection kicks the client and nothing reconnects after it. Connections
-    are spaced so back-to-back teardowns never pile up. Crash resistance is covered separately, not
-    by poking it here."""
+    """Vanilla prompts for the password right after ConnectRequest."""
     proto = _protocol(protected)
 
-    # Correct password first: a clean handshake, no disconnect.
     with TerrariaClient(protected.host, protected.port) as client:
         assert client.connect_request(proto) == PASSWORD_REQUIRED
         kind, _ = client.send_password(PASSWORD)
@@ -70,7 +62,6 @@ def test_vanilla_password_login_flow(protected: Server) -> None:
     time.sleep(1)
     assert protected.is_running(), "server died on a normal login"
 
-    # Wrong password last: its rejection is a Disconnect, and nothing touches the server afterward.
     with TerrariaClient(protected.host, protected.port) as client:
         assert client.connect_request(proto) == PASSWORD_REQUIRED
         kind, reason = client.send_password("definitely-wrong")
@@ -80,11 +71,9 @@ def test_vanilla_password_login_flow(protected: Server) -> None:
 
 @pytest.mark.flavor("tshock")
 def test_tshock_password_login_flow(protected: Server) -> None:
-    """TShock assigns a slot first and asks for the server password once the client requests
-    world data after PlayerInfo (login-before-join): wrong is a kick, right yields WorldInfo."""
+    """TShock assigns a slot first and asks for the server password once the client requests"""
     proto = _protocol(protected)
 
-    # Correct password first: reaches WorldInfo, a clean join.
     with TerrariaClient(protected.host, protected.port) as client:
         assert client.connect_request(proto) == CONTINUE_CONNECTING
         client.client_uuid()
@@ -107,7 +96,6 @@ def test_tshock_password_login_flow(protected: Server) -> None:
         assert kind == DISCONNECT, f"wrong password was not rejected (reply {kind})"
         assert "invalid server password" in reason.lower(), reason
 
-    # TShock does not share vanilla's teardown race, so it must still be up after a kick.
     time.sleep(1)
     assert protected.is_running(), "server died during the login flow"
     assert "FATAL" not in protected.logs(), protected.logs()

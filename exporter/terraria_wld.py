@@ -1,16 +1,4 @@
-"""Minimal, version-aware reader for Terraria .wld world files.
-
-It reads only the world-header section (section 0) and extracts the fields we export as metrics:
-world identity, size, difficulty, evil type, altar count, hardmode, and the downed-boss / saved-NPC
-/ invasion flags. The field order mirrors TEdit's LoadHeaderFlags (the authoritative community
-implementation) and is guarded by the world's format version, so it stays correct across releases
-that only append fields.
-
-Self-validation: after reading the documented sequence we compare the stream position against the
-start of the next section (from the file's section-pointer table). Terraria appends any unknown
-trailing flags, so a correct parse lands at or just before that boundary; landing past it means the
-layout shifted and we mark the parse invalid rather than emit wrong values.
-"""
+"""Version-aware reader for the Terraria .wld world header."""
 
 from __future__ import annotations
 
@@ -54,7 +42,6 @@ class _Reader:
         return self.u8() != 0
 
     def string(self) -> str:
-        # .NET BinaryReader length prefix: 7 bits per byte, high bit = continue
         n = 0; shift = 0
         while True:
             byte = self.u8()
@@ -77,11 +64,11 @@ class World:
     world_id: int = 0
     width: int = 0
     height: int = 0
-    difficulty: int = 0          # 0 classic, 1 expert, 2 master, 3 journey
+    difficulty: int = 0
     is_crimson: bool = False
     altars_smashed: int = 0
     hardmode: bool = False
-    parse_ok: bool = False       # the header aligned to the section boundary
+    parse_ok: bool = False
     bosses: dict = field(default_factory=dict)
     invasions: dict = field(default_factory=dict)
     npcs_saved: dict = field(default_factory=dict)
@@ -262,7 +249,7 @@ def parse_world_header(data: bytes) -> World:
     if v >= 259: r.boolean()                    # combat book vol 2
     if v >= 260: r.boolean()                    # peddler's satchel
     if v >= 261: r.skip(7)                      # 7 unlocked slime spawn bools
-    if v >= 264: r.boolean(); r.u8()            # fast forward to dusk, moondial cooldown
+    if v >= 264: r.boolean(); r.u8()
     if v >= 287: r.boolean(); r.boolean()       # force halloween/xmas forever
     if v >= 288: r.boolean()                    # vampire seed
     if v >= 296: r.boolean()                    # infected seed
@@ -279,9 +266,6 @@ def parse_world_header(data: bytes) -> World:
 
 
 def _finish(w: World, r: _Reader, header_end: int) -> World:
-    # A complete, correctly-aligned parse lands on the next section boundary. Terraria may append a
-    # few unknown trailing flags on a newer format, so allow a small positive remainder; an overrun
-    # or a large shortfall means the layout shifted and the flags are not trustworthy.
     remainder = header_end - r.o
     w.parse_ok = 0 <= remainder <= 64
     return w

@@ -15,8 +15,6 @@ CONFIG_PATH = "/terraria/config"
 LOG_PATH = "/terraria/logs"
 EXPECTED_UID = "999"
 
-# Terraria's connect packet: length 4, message type 1 (ConnectRequest), empty version string.
-# Any real Terraria server answers with a "Multiplayer" version-mismatch message.
 CONNECT_PACKET = b"\x04\x00\x01\x00"
 
 
@@ -100,9 +98,7 @@ def test_tshock_writes_config_and_database(server: Server) -> None:
 
 @pytest.mark.flavor("tshock")
 def test_tshock_writes_its_log_files(server: Server) -> None:
-    """TShock keeps a timestamped log and TerrariaServerAPI writes ServerLog.txt; both must exist in
-    the logs directory, be owned by the server user and have content. A root-owned or unwritable
-    ServerLog.txt makes TShock crash at startup with 'Could not write to "ServerLog.txt"'."""
+    """TShock keeps a timestamped log and TerrariaServerAPI writes ServerLog.txt; both must exist in"""
     listing = server.exec("sh", "-c", f"ls -1 {LOG_PATH}").stdout.split()
     assert "ServerLog.txt" in listing, listing
     assert any(re.fullmatch(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log", name) for name in listing), listing
