@@ -76,16 +76,28 @@ spec:
             - name: terraria
               containerPort: {{ .Values.terraria.port }}
               protocol: TCP
-          # A startup probe, not a readiness probe: it checks the port only until it first opens
-          # (world generation can take a while), marks the pod ready, then stops. A periodic
-          # tcpSocket readiness probe would keep opening and closing connections to the server,
-          # and vanilla Terraria has a netcode race on connection teardown (see tools/crash_repro.py)
-          # that such churn can trigger, so we probe once at startup and never touch the socket again.
+          # Health is checked by looking for the listening socket in /proc/net/tcp, never by
+          # opening a connection to the server. vanilla Terraria has a netcode race on connection
+          # teardown (see tools/crash_repro.py), and a tcpSocket probe's connect-and-close feeds it,
+          # so the probe reads the kernel socket table instead. The startup probe gates readiness
+          # until the port is open (world generation can take a while); the liveness probe then
+          # keeps it there. Port 7777 -> hex 1E61; state 0A is LISTEN.
           startupProbe:
-            tcpSocket:
-              port: terraria
+            exec:
+              command:
+                - sh
+                - -c
+                - grep -qE ":$(printf '%04X' {{ .Values.terraria.port }}) [0-9A-F:]+ 0A " /proc/net/tcp /proc/net/tcp6
             periodSeconds: 10
             failureThreshold: 60
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - grep -qE ":$(printf '%04X' {{ .Values.terraria.port }}) [0-9A-F:]+ 0A " /proc/net/tcp /proc/net/tcp6
+            periodSeconds: 30
+            failureThreshold: 3
           env:
             - name: WORLD_FILENAME
               value: "{{ .Values.terraria.world }}"
