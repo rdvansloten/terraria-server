@@ -1,18 +1,32 @@
+# https://taskfile.dev
+#
+# One way to build and test, used locally and in CI. Images are built multi-arch with buildx into
+# a throwaway local registry, then each platform is pulled and tested, then the tested manifest is
+# promoted to Docker Hub. Override PLATFORMS for a fast single-arch local run:
+#
+#   task test:vanilla                          # all platforms (CI parity)
+#   PLATFORMS=linux/arm64 task test:vanilla    # just your arch, fast
+#   task test                                  # both images
+#   task build:tshock                          # build only
+#   task publish:vanilla                       # build, test, push (needs docker login)
+
 version: '3'
 
 vars:
   IMAGE_REPO: docker.io/rdvansloten/terraria-server
-  PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
-  VANILLA_IMAGE: terraria-server:vanilla
-  TSHOCK_IMAGE: terraria-server:tshock
+  BUILD_REGISTRY: localhost:21500
+  # renovate: datasource=docker depName=library/registry
+  BUILD_REGISTRY_VERSION: 3.1.1
+  BUILDER: terraria
+  PLATFORMS: '{{.PLATFORMS | default "linux/amd64,linux/arm64,linux/arm/v7"}}'
+  CANDIDATE_VANILLA: '{{.BUILD_REGISTRY}}/terraria-server:candidate-vanilla'
+  CANDIDATE_TSHOCK: '{{.BUILD_REGISTRY}}/terraria-server:candidate-tshock'
   VANILLA_VERSION:
     sh: sed -nE 's/^ARG TERRARIA_SERVER_VERSION="([0-9]+)"/\1/p' images/vanilla/Dockerfile
   VANILLA_DOTTED:
     sh: sed -nE 's/^ARG TERRARIA_SERVER_VERSION="([0-9]+)"/\1/p' images/vanilla/Dockerfile | sed 's/./&./g; s/\.$//'
   TSHOCK_VERSION:
     sh: sed -nE 's/^ARG TSHOCK_VERSION="v?([0-9.]+)"/\1/p' images/tshock/Dockerfile
-  # Optional: PLATFORM=linux/amd64 to build/test a non-native platform
-  PLATFORM_FLAG: '{{if .PLATFORM}}--platform {{.PLATFORM}}{{end}}'
 
 tasks:
   default:
@@ -26,35 +40,67 @@ tasks:
     status:
       - python -c "import pytest"
 
-  build:vanilla:
-    desc: Build the vanilla Terraria image ({{.VANILLA_IMAGE}})
+  registry:
+    desc: Start the throwaway build registry (internal)
+    internal: true
     cmds:
-      - docker buildx build {{.PLATFORM_FLAG}} --load -t {{.VANILLA_IMAGE}} ./images/vanilla
-    sources:
-      - images/vanilla/**/*
+      - docker run --detach --name terraria-build-registry --publish 21500:5000 docker.io/library/registry:{{.BUILD_REGISTRY_VERSION}}
+      - until curl --silent --fail http://{{.BUILD_REGISTRY}}/v2/ >/dev/null; do sleep 1; done
+    status:
+      - docker ps --filter name=terraria-build-registry --filter status=running --quiet | grep -q .
+
+  builder:
+    desc: Create a buildx builder that can push to the insecure local registry (internal)
+    internal: true
+    cmds:
+      - |
+        tmp="$(mktemp)"
+        printf '[registry."%s"]\n  http = true\n' "{{.BUILD_REGISTRY}}" > "$tmp"
+        docker buildx create --name {{.BUILDER}} --driver docker-container \
+          --driver-opt network=host \
+          --buildkitd-flags '--allow-insecure-entitlement network.host' \
+          --buildkitd-config "$tmp"
+        rm -f "$tmp"
+    status:
+      - docker buildx inspect {{.BUILDER}} >/dev/null 2>&1
+
+  build:vanilla:
+    desc: Build the vanilla image multi-arch into the local registry
+    deps: [registry, builder]
+    cmds:
+      - docker buildx build ./images/vanilla --builder {{.BUILDER}} --network host --pull --platform {{.PLATFORMS}} --tag {{.CANDIDATE_VANILLA}} --push
 
   build:tshock:
-    desc: Build the TShock image ({{.TSHOCK_IMAGE}})
+    desc: Build the TShock image multi-arch into the local registry
+    deps: [registry, builder]
     cmds:
-      - docker buildx build {{.PLATFORM_FLAG}} --load -t {{.TSHOCK_IMAGE}} ./images/tshock
-    sources:
-      - images/tshock/**/*
+      - docker buildx build ./images/tshock --builder {{.BUILDER}} --network host --pull --platform {{.PLATFORMS}} --tag {{.CANDIDATE_TSHOCK}} --push
 
   build:
     desc: Build both images
     deps: ["build:vanilla", "build:tshock"]
 
   test:vanilla:
-    desc: Build and test the vanilla image
-    deps: ["install", "build:vanilla"]
+    desc: Build and test the vanilla image on every platform, then the Helm chart
+    deps: [install, build:vanilla]
     cmds:
-      - pytest tests --image {{.VANILLA_IMAGE}} --flavor vanilla {{.PLATFORM_FLAG}} {{.CLI_ARGS}}
+      - for: { var: PLATFORMS, split: ',' }
+        cmd: |
+          docker pull --platform {{.ITEM}} {{.CANDIDATE_VANILLA}} >/dev/null
+          pytest tests --ignore=tests/test_chart.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla --platform {{.ITEM}} {{.CLI_ARGS}}
+      - docker pull {{.CANDIDATE_VANILLA}} >/dev/null
+      - pytest tests/test_chart.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla {{.CLI_ARGS}}
 
   test:tshock:
-    desc: Build and test the TShock image
-    deps: ["install", "build:tshock"]
+    desc: Build and test the TShock image on every platform, then the Helm chart
+    deps: [install, build:tshock]
     cmds:
-      - pytest tests --image {{.TSHOCK_IMAGE}} --flavor tshock {{.PLATFORM_FLAG}} {{.CLI_ARGS}}
+      - for: { var: PLATFORMS, split: ',' }
+        cmd: |
+          docker pull --platform {{.ITEM}} {{.CANDIDATE_TSHOCK}} >/dev/null
+          pytest tests --ignore=tests/test_chart.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock --platform {{.ITEM}} {{.CLI_ARGS}}
+      - docker pull {{.CANDIDATE_TSHOCK}} >/dev/null
+      - pytest tests/test_chart.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock {{.CLI_ARGS}}
 
   test:
     desc: Build and test both images
@@ -63,26 +109,34 @@ tasks:
       - task: test:tshock
 
   publish:vanilla:
-    desc: Build multi-arch vanilla image and push to {{.IMAGE_REPO}} (version, dotted, -vanilla, vanilla, latest)
+    desc: Build, test, then promote the tested vanilla manifest to Docker Hub (needs docker login)
+    deps: [test:vanilla]
     cmds:
       - >-
-        docker buildx build --platform {{.PLATFORMS}} --push
-        -t {{.IMAGE_REPO}}:{{.VANILLA_VERSION}}
-        -t {{.IMAGE_REPO}}:{{.VANILLA_DOTTED}}
-        -t {{.IMAGE_REPO}}:{{.VANILLA_VERSION}}-vanilla
-        -t {{.IMAGE_REPO}}:{{.VANILLA_DOTTED}}-vanilla
-        -t {{.IMAGE_REPO}}:vanilla
-        -t {{.IMAGE_REPO}}:latest
-        ./images/vanilla
+        docker buildx imagetools create
+        --tag {{.IMAGE_REPO}}:{{.VANILLA_VERSION}}
+        --tag {{.IMAGE_REPO}}:{{.VANILLA_DOTTED}}
+        --tag {{.IMAGE_REPO}}:{{.VANILLA_VERSION}}-vanilla
+        --tag {{.IMAGE_REPO}}:{{.VANILLA_DOTTED}}-vanilla
+        --tag {{.IMAGE_REPO}}:vanilla
+        --tag {{.IMAGE_REPO}}:latest
+        {{.CANDIDATE_VANILLA}}
 
   publish:tshock:
-    desc: Build multi-arch TShock image and push to {{.IMAGE_REPO}} as {{.TSHOCK_VERSION}}-tshock and tshock (CI also adds the Terraria version tags)
+    desc: Build, test, then promote the tested TShock manifest to Docker Hub (needs docker login)
+    deps: [test:tshock]
     cmds:
       - >-
-        docker buildx build --platform {{.PLATFORMS}} --push
-        -t {{.IMAGE_REPO}}:{{.TSHOCK_VERSION}}-tshock
-        -t {{.IMAGE_REPO}}:tshock
-        ./images/tshock
+        docker buildx imagetools create
+        --tag {{.IMAGE_REPO}}:tshock-{{.TSHOCK_VERSION}}
+        --tag {{.IMAGE_REPO}}:tshock
+        {{.CANDIDATE_TSHOCK}}
+
+  clean:
+    desc: Remove the throwaway build registry and builder
+    cmds:
+      - docker rm -f terraria-build-registry 2>/dev/null || true
+      - docker buildx rm -f {{.BUILDER}} 2>/dev/null || true
 
   lint:chart:
     desc: Lint the Helm chart
