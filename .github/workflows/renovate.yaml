@@ -1,15 +1,5 @@
 name: Renovate
 
-# Self-hosted Renovate running the official image. It authenticates as a GitHub App so the
-# pull requests it opens trigger the build workflows (PRs from GITHUB_TOKEN would not) and
-# so it may update pinned actions under .github/workflows.
-#
-# Required repository configuration:
-#   vars.RENOVATE_APP_ID              client id of a GitHub App installed on this repo with
-#                                     Contents, Pull requests and Workflows: read & write
-#   secrets.RENOVATE_APP_PRIVATE_KEY  the app's private key
-#   secrets.DOCKER_USERNAME / DOCKER_PASSWORD   Docker Hub credentials (also used to push images)
-
 on:
   schedule:
     - cron: '0 5 * * *'
@@ -48,6 +38,15 @@ jobs:
         with:
           client-id: ${{ vars.RENOVATE_APP_ID }}
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          # Least-privilege token: exactly what Renovate needs. metadata:read is implicit.
+          #   contents      commit update branches
+          #   pull-requests open and update the PRs
+          #   workflows     update pinned action digests under .github/workflows
+          #   issues        create and maintain the Dependency Dashboard (and config-warning issues)
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+          permission-issues: write
 
       - name: Resolve the app's bot identity
         id: identity

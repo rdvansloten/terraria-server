@@ -125,15 +125,16 @@ ownership, world creation and clean logs. The same suite runs in CI for all thre
 - `renovate.yaml` runs self-hosted Renovate daily from the official image, authenticated as a
   GitHub App so its pull requests trigger the build workflows. It opens PRs for new Terraria server
   releases (via terraria.org's release list), TShock releases, base image digests and GitHub Actions
-  digests. Merging publishes the image. Repository rules are in `renovate.json`, credentials and
-  identity in `.github/renovate.config.js`.
+  digests, and maintains a Dependency Dashboard issue listing pending and errored updates. Merging a
+  PR publishes the image. Repository rules are in `renovate.json`, credentials and identity in
+  `.github/renovate.config.js`.
 
 Required repository settings:
 
 | Name                                 | Kind     | Used by                                                                                               |
 | ------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------- |
 | `DOCKER_USERNAME`, `DOCKER_PASSWORD` | secrets  | Pushing images, authenticated Docker Hub lookups in Renovate                                          |
-| `RENOVATE_APP_ID`                    | variable | Client id of a GitHub App installed on the repo with Contents, Pull requests and Workflows read/write |
+| `RENOVATE_APP_ID`                    | variable | Client id of a GitHub App installed on the repo with Contents, Pull requests, Workflows and Issues read/write |
 | `RENOVATE_APP_PRIVATE_KEY`           | secret   | Private key of that app                                                                               |
 
 ## License
