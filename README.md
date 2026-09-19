@@ -111,9 +111,10 @@ values. Identity (name, seed, game/format/worldgen version) is exposed as labels
 include players online, joins, leaves, deaths, world saves, login attempts by status, and
 boss/invasion start events.
 
-Note: the endgame bosses that sit after a not-yet-mapped variable-length header region (Moon Lord,
-Duke Fishron, the celestial pillars, Empress of Light, Queen Slime, Deerclops) are not yet in
-`terraria_boss_defeated`; the main line through Golem and Plantera is.
+The full boss set is covered, including the endgame (Moon Lord, Duke Fishron, the celestial pillars,
+Empress of Light, Queen Slime, Deerclops). The parser reads the entire world header and only trusts
+its flags when the parse lands exactly on the next section boundary, so a future format change fails
+safe via `terraria_world_parse_ok` rather than reporting wrong values.
 
 ## Helm chart
 

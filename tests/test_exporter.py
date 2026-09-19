@@ -20,6 +20,7 @@ from prometheus_client import CollectorRegistry, generate_latest  # noqa: E402
 
 from logs import LogState  # noqa: E402
 from metrics import TerrariaCollector  # noqa: E402
+import terraria_wld  # noqa: E402
 from terraria_wld import parse_world_file  # noqa: E402
 
 # Every metric family the exporter must emit.
@@ -127,3 +128,63 @@ def test_live_activity_counters_reflect_the_log(exposition: str) -> None:
     assert s['terraria_boss_spawned_total{boss="skeletron"}'] == 1.0
     assert s['terraria_invasion_started_total{invasion="goblin_army"}'] == 1.0
     assert s["terraria_server_start_time_seconds"] == 1000.0
+
+
+EXPECTED_BOSSES = {
+    "eye_of_cthulhu", "eater_of_worlds_or_brain", "skeletron", "queen_bee", "king_slime",
+    "the_destroyer", "the_twins", "skeletron_prime", "plantera", "golem",
+    "duke_fishron", "lunatic_cultist", "moon_lord",
+    "pumpking", "mourning_wood", "ice_queen", "santa_nk1", "everscream",
+    "solar_pillar", "vortex_pillar", "nebula_pillar", "stardust_pillar",
+    "empress_of_light", "queen_slime", "deerclops",
+}
+
+
+def test_all_bosses_including_endgame_are_tracked() -> None:
+    w = parse_world_file(str(FIXTURE))
+    assert w.parse_ok
+    assert set(w.bosses) == EXPECTED_BOSSES, set(w.bosses) ^ EXPECTED_BOSSES
+
+
+def _boss_byte_offset(data: bytes, boss: str) -> int:
+    """Find the byte whose flip sets exactly `boss` to defeated, proving the label maps to it."""
+    offsets = []
+    orig = terraria_wld._Reader.boolean
+
+    def logged(self):
+        offsets.append(self.o)
+        return orig(self)
+
+    terraria_wld._Reader.boolean = logged
+    try:
+        terraria_wld.parse_world_header(data)
+    finally:
+        terraria_wld._Reader.boolean = orig
+
+    for off in offsets:
+        b = bytearray(data); b[off] = 1
+        w = terraria_wld.parse_world_header(bytes(b))
+        defeated = [k for k, v in w.bosses.items() if v]
+        if defeated == [boss]:
+            return off
+    raise AssertionError(f"no single-boss byte found for {boss}")
+
+
+def test_defeated_boss_shows_up_in_the_metric() -> None:
+    """A world with Moon Lord defeated reports exactly that boss as 1, and the metric is set."""
+    data = FIXTURE.read_bytes()
+    off = _boss_byte_offset(data, "moon_lord")
+    progressed = bytearray(data); progressed[off] = 1
+    world = terraria_wld.parse_world_header(bytes(progressed))
+    assert world.parse_ok
+
+    logs = LogState()
+    snapshot = {
+        "world": world, "logs": logs, "world_file_bytes": len(data),
+        "world_save_age": 0.0, "last_parsed": 1.0, "up": True,
+    }
+    registry = CollectorRegistry()
+    registry.register(TerrariaCollector(lambda: snapshot))
+    s = _samples(generate_latest(registry).decode())
+    assert s['terraria_boss_defeated{boss="moon_lord"}'] == 1.0
+    assert s['terraria_boss_defeated{boss="plantera"}'] == 0.0

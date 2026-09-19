@@ -201,15 +201,90 @@ def parse_world_header(data: bytes) -> World:
     N["stylist"] = r.boolean()
     if v >= 140: N["tax_collector"] = r.boolean()
     if v >= 201: N["golfer"] = r.boolean()
-    # Alignment checksum: the next field is the banner kill-tally count (MaxBannerTypes, a small
-    # positive number). If it reads sane, every core flag above is correctly aligned. Endgame
-    # bosses live after this tally behind a variable-length region not yet mapped, so we stop here.
     if v >= 107: r.i32()                     # invasion size start
     if v >= 108: r.i32()                     # cultist delay
-    banner_count = r.i16() if v >= 109 else 300
-    w.parse_ok = 0 < banner_count < 2000
-    return w
+    if v < 109: return _finish(w, r, header_end)
+    for _ in range(r.i16()):                  # banner kill tally
+        r.i32()
+    if v >= 289:
+        for _ in range(r.i16()):              # claimable banners
+            r.u16()
+    if v < 128: return _finish(w, r, header_end)
+    if v >= 140: r.boolean()                  # fast-forward time
+    if v < 131: return _finish(w, r, header_end)
+    B["duke_fishron"] = r.boolean()
+    if v >= 140:
+        I["martian_madness"] = r.boolean()
+        B["lunatic_cultist"] = r.boolean()
+        B["moon_lord"] = r.boolean()
+    B["pumpking"] = r.boolean()
+    B["mourning_wood"] = r.boolean()
+    B["ice_queen"] = r.boolean()
+    B["santa_nk1"] = r.boolean()
+    B["everscream"] = r.boolean()
+    if v < 140: return _finish(w, r, header_end)
+    B["solar_pillar"] = r.boolean()
+    B["vortex_pillar"] = r.boolean()
+    B["nebula_pillar"] = r.boolean()
+    B["stardust_pillar"] = r.boolean()
+    r.boolean(); r.boolean(); r.boolean(); r.boolean()   # celestial pillars active (transient)
+    r.boolean()                                # apocalypse (transient)
+    if v >= 170:                               # party
+        r.boolean(); r.boolean(); r.i32()
+        for _ in range(r.i32()):
+            r.i32()
+    if v >= 174:                               # sandstorm
+        r.boolean(); r.i32(); r.f32(); r.f32()
+    if v >= 178:
+        N["bartender"] = r.boolean()
+        I["old_ones_army_t1"] = r.boolean()
+        I["old_ones_army_t2"] = r.boolean()
+        I["old_ones_army_t3"] = r.boolean()
+    if v > 194: r.u8()                         # mushroom bg
+    if v >= 215: r.u8()                        # underworld bg
+    if v >= 195: r.skip(3)                     # bg tree 2/3/4
+    if v >= 204: r.boolean()                   # combat book
+    if v >= 207:                               # lantern night
+        r.i32(); r.boolean(); r.boolean(); r.boolean()
+    if v >= 211:                               # tree top variations
+        for _ in range(r.i32()):
+            r.i32()
+    if v >= 212: r.boolean(); r.boolean()      # force halloween/xmas today
+    if v >= 216: r.i32(); r.i32(); r.i32(); r.i32()   # ore tiers copper/iron/silver/gold
+    if v >= 217: r.boolean(); r.boolean(); r.boolean()   # bought cat/dog/bunny
+    if v >= 223:
+        B["empress_of_light"] = r.boolean()
+        B["queen_slime"] = r.boolean()
+    if v >= 240:
+        B["deerclops"] = r.boolean()
+    if v >= 250: r.boolean()                    # unlocked slime blue spawn
+    if v >= 251: r.skip(8)                      # 8 unlocked npc spawn bools
+    if v >= 259: r.boolean()                    # combat book vol 2
+    if v >= 260: r.boolean()                    # peddler's satchel
+    if v >= 261: r.skip(7)                      # 7 unlocked slime spawn bools
+    if v >= 264: r.boolean(); r.u8()            # fast forward to dusk, moondial cooldown
+    if v >= 287: r.boolean(); r.boolean()       # force halloween/xmas forever
+    if v >= 288: r.boolean()                    # vampire seed
+    if v >= 296: r.boolean()                    # infected seed
+    if v >= 291: r.i32(); r.i32()               # meteor shower count, coin rain
+    if v >= 297:                                # team-based spawns
+        r.boolean()
+        for _ in range(r.u8()):
+            r.i16(); r.i16()
+    if v >= 304: r.boolean()                    # dual dungeons seed
+    if v >= 323: r.boolean(); r.boolean()       # more/no lightning seed
+    if 299 <= v < 313: r.u32()                  # deprecated, discarded
+    if v >= 299: r.string()                     # world manifest data (JSON)
+    return _finish(w, r, header_end)
 
+
+def _finish(w: World, r: _Reader, header_end: int) -> World:
+    # A complete, correctly-aligned parse lands on the next section boundary. Terraria may append a
+    # few unknown trailing flags on a newer format, so allow a small positive remainder; an overrun
+    # or a large shortfall means the layout shifted and the flags are not trustworthy.
+    remainder = header_end - r.o
+    w.parse_ok = 0 <= remainder <= 64
+    return w
 
 def parse_world_file(path: str) -> World:
     with open(path, "rb") as fh:
