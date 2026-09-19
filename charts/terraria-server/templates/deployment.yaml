@@ -76,6 +76,13 @@ spec:
             - name: terraria
               containerPort: {{ .Values.terraria.port }}
               protocol: TCP
+          # World generation on first start can take a while, so allow a long ramp before ready.
+          readinessProbe:
+            tcpSocket:
+              port: terraria
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 60
           env:
             - name: WORLD_FILENAME
               value: "{{ .Values.terraria.world }}"

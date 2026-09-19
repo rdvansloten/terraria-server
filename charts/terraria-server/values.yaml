@@ -71,8 +71,9 @@ tshock:
 # Disabling any of these backs the path with an emptyDir that is wiped whenever the pod is
 # recreated, including on every helm upgrade. Only do this for throwaway test servers.
 persistence:
-  # Global defaults for all PVCs
-  storageClassName: nfs-client
+  # Global defaults for all PVCs.
+  # Empty uses the cluster's default StorageClass. Set a class name to pin one (e.g. nfs-client).
+  storageClassName: ""
   accessMode: ReadWriteOnce
   size: 10Gi
 

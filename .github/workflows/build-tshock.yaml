@@ -111,6 +111,16 @@ jobs:
           docker pull --platform linux/arm/v7 "$BUILD_REGISTRY/$REPOSITORY:candidate"
           pytest tests --image "$BUILD_REGISTRY/$REPOSITORY:candidate" --flavor "$FLAVOR" --platform linux/arm/v7
 
+      - name: Create kind cluster
+        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+
+      - name: Load the image and test the Helm chart on it
+        run: |
+          docker pull --platform linux/amd64 "$BUILD_REGISTRY/$REPOSITORY:candidate"
+          docker tag "$BUILD_REGISTRY/$REPOSITORY:candidate" chart-test:candidate
+          kind load docker-image chart-test:candidate --name chart-testing
+          pytest tests/test_chart.py --chart --image chart-test:candidate --flavor "$FLAVOR"
+
       - name: Log in to Docker Hub
         if: github.ref == 'refs/heads/main'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0

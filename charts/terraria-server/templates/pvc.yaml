@@ -12,7 +12,10 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  storageClassName: {{ .Values.persistence.world.storageClassName | default .Values.persistence.storageClassName }}
+  {{- $sc := .Values.persistence.world.storageClassName | default .Values.persistence.storageClassName }}
+  {{- with $sc }}
+  storageClassName: {{ . }}
+  {{- end }}
   accessModes:
     {{- range .Values.persistence.world.accessModes | default (list .Values.persistence.accessMode) }}
     - {{ . }}
@@ -41,7 +44,10 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  storageClassName: {{ .Values.persistence.config.storageClassName | default .Values.persistence.storageClassName }}
+  {{- $sc := .Values.persistence.config.storageClassName | default .Values.persistence.storageClassName }}
+  {{- with $sc }}
+  storageClassName: {{ . }}
+  {{- end }}
   accessModes:
     {{- range .Values.persistence.config.accessModes | default (list .Values.persistence.accessMode) }}
     - {{ . }}
@@ -71,7 +77,10 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  storageClassName: {{ .Values.persistence.logs.storageClassName | default .Values.persistence.storageClassName }}
+  {{- $sc := .Values.persistence.logs.storageClassName | default .Values.persistence.storageClassName }}
+  {{- with $sc }}
+  storageClassName: {{ . }}
+  {{- end }}
   accessModes:
     {{- range .Values.persistence.logs.accessModes | default (list .Values.persistence.accessMode) }}
     - {{ . }}
