@@ -93,6 +93,28 @@ of the same lines there, plus the API layer's `ServerLog.txt` with startup detai
 volume is a persisted archive rather than the primary source. World generation on first start is
 noisy: expect a few tens of thousands of progress lines.
 
+## Metrics
+
+An optional Prometheus exporter ([`exporter/`](exporter)) runs as a sidecar and exposes Terraria
+metrics on `/metrics`. It reads the world file for progression and identity (works for both
+flavors) and optionally tails the server log for live player and event activity. Enable it in the
+chart with `metrics.enabled=true`, and `metrics.serviceMonitor.enabled=true` if you run the
+Prometheus Operator.
+
+World metrics come from the `.wld` header, parsed with a version-aware reader (field order mirrors
+TEdit) that reads the stable backup and retries up to 10 times to avoid a torn read mid-save. It
+emits `terraria_world_parse_ok` so a future format change fails safe instead of reporting wrong
+values. Identity (name, seed, game/format/worldgen version) is exposed as labels on
+`terraria_world_info`; progression as `terraria_boss_defeated{boss}`,
+`terraria_invasion_defeated{invasion}` and `terraria_npc_saved{npc}`; plus `terraria_hardmode`,
+`terraria_difficulty`, `terraria_altars_smashed`, and file/health gauges. Live log-derived metrics
+include players online, joins, leaves, deaths, world saves, login attempts by status, and
+boss/invasion start events.
+
+Note: the endgame bosses that sit after a not-yet-mapped variable-length header region (Moon Lord,
+Duke Fishron, the celestial pillars, Empress of Light, Queen Slime, Deerclops) are not yet in
+`terraria_boss_defeated`; the main line through Golem and Plantera is.
+
 ## Helm chart
 
 [`charts/terraria-server`](charts/terraria-server) deploys either image with persistent

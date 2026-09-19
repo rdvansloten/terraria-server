@@ -170,6 +170,23 @@ securityContext:
   runAsUser: 999
   runAsNonRoot: true
 
+# Prometheus metrics via a sidecar exporter that reads the world file (progression, hardmode,
+# altars, identity) and optionally tails the server log (players, deaths, boss/invasion events).
+metrics:
+  enabled: false
+  image:
+    repository: docker.io/rdvansloten/terraria-exporter
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  port: 9150
+  # Tail the server log directory for live player/activity metrics. World metrics work regardless.
+  tailLogs: true
+  serviceMonitor:
+    enabled: false          # needs the Prometheus Operator CRD
+    interval: 60s
+    scrapeTimeout: 30s
+    labels: {}              # extra labels so your Prometheus selects it
+
 nodeSelector: {}
 
 tolerations: []

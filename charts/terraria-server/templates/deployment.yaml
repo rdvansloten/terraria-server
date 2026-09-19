@@ -129,6 +129,41 @@ spec:
               mountPath: /terraria/logs
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+        {{- if .Values.metrics.enabled }}
+        - name: metrics
+          image: "{{ .Values.metrics.image.repository }}:{{ .Values.metrics.image.tag }}"
+          imagePullPolicy: {{ .Values.metrics.image.pullPolicy }}
+          env:
+            - name: WORLD_PATH
+              value: "/terraria/.local/share/Terraria/Worlds/{{ .Values.terraria.world }}"
+            - name: METRICS_PORT
+              value: "{{ .Values.metrics.port }}"
+            {{- if .Values.metrics.tailLogs }}
+            - name: LOG_DIR
+              value: "/terraria/logs"
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+          volumeMounts:
+            - name: terraria-world
+              mountPath: /terraria/.local/share/Terraria/Worlds
+              readOnly: true
+            {{- if .Values.metrics.tailLogs }}
+            - name: terraria-logs
+              mountPath: /terraria/logs
+              readOnly: true
+            {{- end }}
+        {{- end }}
       # Disabled persistence falls back to emptyDir: data is lost when the pod is recreated
       # (NOTES.txt warns loudly about this on install and upgrade).
       volumes:

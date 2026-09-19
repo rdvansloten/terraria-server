@@ -24,5 +24,11 @@ spec:
       {{- end }}
       protocol: TCP
       name: terraria
+    {{- if .Values.metrics.enabled }}
+    - port: {{ .Values.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- end }}
   selector:
     {{- include "terraria-server.selectorLabels" . | nindent 4 }}

@@ -24,7 +24,7 @@ LISTENING_PATTERN = "Listening on port 7777"
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("terraria")
-    group.addoption("--image", required=True, help="Image to test, e.g. terraria-server:vanilla")
+    group.addoption("--image", default=None, help="Image to test, e.g. terraria-server:vanilla (required for the container/chart tests)")
     group.addoption(
         "--flavor",
         choices=["vanilla", "tshock"],
@@ -141,6 +141,8 @@ def _host_port(name: str) -> tuple[str, int]:
 def start_container(config: pytest.Config, env: dict[str, str], extra_args: list[str] | None = None) -> Server:
     """Start the image under test with the given environment and return a handle."""
     image = config.getoption("--image")
+    if not image:
+        pytest.skip("no --image given")
     platform = config.getoption("--platform")
     name = f"terraria-test-{uuid.uuid4().hex[:8]}"
 
