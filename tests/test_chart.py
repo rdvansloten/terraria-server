@@ -15,6 +15,7 @@ race never firing.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import time
 import uuid
@@ -34,8 +35,86 @@ def _run(*args: str, timeout: int = 300, check: bool = True) -> subprocess.Compl
     return subprocess.run(args, capture_output=True, text=True, check=check, timeout=timeout)
 
 
+# Set once the kind_cluster fixture resolves; every kubectl call targets this context.
+_CONTEXT: str | None = None
+
+
+def _kubectl(*args: str, **kw) -> subprocess.CompletedProcess[str]:
+    ctx = ["--context", _CONTEXT] if _CONTEXT else []
+    return _run("kubectl", *ctx, *args, **kw)
+
+
+def _tool_missing(*tools: str) -> str | None:
+    for tool in tools:
+        if shutil.which(tool) is None:
+            return f"{tool} not found on PATH"
+    return None
+
+
+def _docker_running() -> bool:
+    try:
+        return _run("docker", "info", timeout=20, check=False).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _current_kind_context() -> str | None:
+    """Return the current kube context if it is a reachable kind cluster, else None."""
+    ctx = _run("kubectl", "config", "current-context", check=False).stdout.strip()
+    if ctx.startswith("kind-") and _run("kubectl", "cluster-info", check=False, timeout=20).returncode == 0:
+        return ctx
+    return None
+
+
 @pytest.fixture(scope="module")
-def deployment(request: pytest.FixtureRequest):
+def kind_cluster(request: pytest.FixtureRequest):
+    """A kind cluster to test against, with the --image loaded in.
+
+    Uses the current context if it is already a kind cluster; otherwise, if docker and kind are
+    available, creates an ephemeral cluster and deletes it afterwards. Skips (or, with --chart,
+    fails) when the prerequisites are missing, so the chart test runs wherever it can and stays
+    out of the way where it cannot.
+    """
+    force = request.config.getoption("--chart")
+
+    def unavailable(reason: str):
+        if force:
+            pytest.fail(f"--chart was given but {reason}")
+        pytest.skip(f"chart test skipped: {reason}")
+
+    missing = _tool_missing("kubectl", "helm")
+    if missing:
+        unavailable(missing)
+    if not _docker_running():
+        unavailable("docker is not running")
+
+    context = _current_kind_context()
+    created = None
+    if context is None:
+        if _tool_missing("kind"):
+            unavailable(
+                "kind is required to run the chart test locally but is not installed "
+                "(install it, e.g. 'brew install kind', or a cluster runs automatically in CI)"
+            )
+        created = f"terraria-test-{uuid.uuid4().hex[:8]}"
+        _run("kind", "create", "cluster", "--name", created, "--wait", "60s", timeout=300)
+        context = f"kind-{created}"
+
+    cluster = context[len("kind-"):]
+    global _CONTEXT
+    _CONTEXT = context
+    try:
+        _run("kind", "load", "docker-image", request.config.getoption("--image"),
+             "--name", cluster, timeout=300)
+        yield {"context": context, "cluster": cluster}
+    finally:
+        _CONTEXT = None
+        if created:
+            _run("kind", "delete", "cluster", "--name", created, check=False, timeout=120)
+
+
+@pytest.fixture(scope="module")
+def deployment(request: pytest.FixtureRequest, kind_cluster):
     """Install the chart with the image under test into a unique namespace; wait for first rollout."""
     config = request.config
     image = config.getoption("--image")
@@ -44,7 +123,8 @@ def deployment(request: pytest.FixtureRequest):
     repository, _, tag = image.rpartition(":")
 
     _run(
-        "helm", "upgrade", "--install", release, CHART_DIR,
+        "helm", "--kube-context", kind_cluster["context"],
+        "upgrade", "--install", release, CHART_DIR,
         "-n", namespace, "--create-namespace",
         "--set", f"image.repository={repository}",
         "--set", f"image.tag={tag}",
@@ -53,25 +133,25 @@ def deployment(request: pytest.FixtureRequest):
         timeout=180,
     )
     try:
-        deploy = _run("kubectl", "-n", namespace, "get", "deploy",
+        deploy = _kubectl("-n", namespace, "get", "deploy",
                       "-l", f"app.kubernetes.io/instance={release}", "-o", "name").stdout.strip()
         assert deploy, "no deployment created by the chart"
-        svc = _run("kubectl", "-n", namespace, "get", "svc",
+        svc = _kubectl("-n", namespace, "get", "svc",
                    "-l", f"app.kubernetes.io/instance={release}", "-o", "name").stdout.strip()
         _wait_ready(namespace, deploy, config.getoption("--startup-timeout"))
         yield {"namespace": namespace, "release": release, "deploy": deploy, "svc": svc}
     finally:
         if request.session.testsfailed:
-            logs = _run("kubectl", "-n", namespace, "logs", "-l",
+            logs = _kubectl("-n", namespace, "logs", "-l",
                         f"app.kubernetes.io/instance={release}", "--tail=-1", check=False).stdout
             print(f"\n--- pod logs ---\n{logs}")
         # Deleting the namespace removes the release and all its PVCs; --wait=false keeps CI fast.
-        _run("kubectl", "delete", "namespace", namespace, "--ignore-not-found", "--wait=false", check=False)
+        _kubectl("delete", "namespace", namespace, "--ignore-not-found", "--wait=false", check=False)
 
 
 def _wait_ready(namespace: str, deploy: str, timeout: int) -> None:
-    _run("kubectl", "-n", namespace, "rollout", "status", deploy, f"--timeout={timeout}s",
-         timeout=timeout + 30)
+    _kubectl("-n", namespace, "rollout", "status", deploy, f"--timeout={timeout}s",
+             timeout=timeout + 30)
 
 
 def _read_forward_port(proc: subprocess.Popen, timeout: int = 30) -> int:
@@ -89,7 +169,7 @@ def _read_forward_port(proc: subprocess.Popen, timeout: int = 30) -> int:
 def _handshake(namespace: str, svc: str, proto: int) -> int:
     """One attempt through a fresh port-forward: return the ConnectRequest reply type."""
     proc = subprocess.Popen(
-        ["kubectl", "-n", namespace, "port-forward", svc, ":7777"],
+        ["kubectl", *(["--context", _CONTEXT] if _CONTEXT else []), "-n", namespace, "port-forward", svc, ":7777"],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     try:
@@ -101,7 +181,7 @@ def _handshake(namespace: str, svc: str, proto: int) -> int:
 
 
 def _protocol(namespace: str, deploy: str, svc: str) -> int:
-    logs = _run("kubectl", "-n", namespace, "logs", deploy, "--tail=-1").stdout
+    logs = _kubectl("-n", namespace, "logs", deploy, "--tail=-1").stdout
     match = re.search(r"Terraria Server v(\d+\.\d+\.\d+\.\d+)", logs)
     assert match, "server version not found in pod logs"
     return KNOWN_PROTOCOLS.get(match.group(1)) or discover_protocol("127.0.0.1", 0, logs)

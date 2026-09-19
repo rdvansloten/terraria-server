@@ -42,8 +42,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--chart",
         action="store_true",
         default=False,
-        help="Run the Helm chart deployment tests against the current kube context (needs helm, "
-        "kubectl and a cluster with the --image already loaded, e.g. a kind cluster)",
+        help="Force the Helm chart tests to run: fail (instead of skip) if the prerequisites "
+        "(docker, kind, helm, kubectl) are missing. By default they run when those are available "
+        "and skip when they are not.",
     )
     group.addoption("--release", default="tt", help="Helm release name for the chart tests")
     group.addoption(
@@ -61,15 +62,10 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     flavor = config.getoption("--flavor")
-    run_chart = config.getoption("--chart")
     for item in items:
         marker = item.get_closest_marker("flavor")
         if marker and marker.args[0] != flavor:
             item.add_marker(pytest.mark.skip(reason=f"only for --flavor {marker.args[0]}"))
-        if item.get_closest_marker("chart") and not run_chart:
-            item.add_marker(pytest.mark.skip(reason="chart tests require --chart"))
-        if run_chart and not item.get_closest_marker("chart"):
-            item.add_marker(pytest.mark.skip(reason="--chart runs only the chart tests"))
 
 
 def docker(*args: str, check: bool = True, timeout: int = 60) -> subprocess.CompletedProcess[str]:
