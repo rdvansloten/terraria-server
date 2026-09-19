@@ -159,8 +159,7 @@ def test_existing_config_is_not_overwritten(run_server, startup_timeout: int, tm
     assert (config_dir / "serverconfig.txt").read_text() == content
 
 
-# Network protocol version per Terraria release, as sent in the ConnectRequest version string.
-KNOWN_PROTOCOLS = {"1.4.5.8": 326, "1.4.5.6": 319}
+from terraria_client import KNOWN_PROTOCOLS
 
 
 def _connect_reply(srv: Server) -> int:
