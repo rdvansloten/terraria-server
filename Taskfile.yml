@@ -21,6 +21,8 @@ vars:
   PLATFORMS: '{{.PLATFORMS | default "linux/amd64,linux/arm64,linux/arm/v7"}}'
   CANDIDATE_VANILLA: '{{.BUILD_REGISTRY}}/terraria-server:candidate-vanilla'
   CANDIDATE_TSHOCK: '{{.BUILD_REGISTRY}}/terraria-server:candidate-tshock'
+  EXPORTER_REPO: docker.io/rdvansloten/terraria-exporter
+  CANDIDATE_EXPORTER: '{{.BUILD_REGISTRY}}/terraria-exporter:candidate'
   VANILLA_VERSION:
     sh: sed -nE 's/^ARG TERRARIA_SERVER_VERSION="([0-9]+)"/\1/p' images/vanilla/Dockerfile
   VANILLA_DOTTED:
@@ -76,9 +78,15 @@ tasks:
     cmds:
       - docker buildx build ./images/tshock --builder {{.BUILDER}} --network host --pull --platform {{.PLATFORMS}} --tag {{.CANDIDATE_TSHOCK}} --push
 
+  build:exporter:
+    desc: Build the metrics exporter image multi-arch into the local registry
+    deps: [registry, builder]
+    cmds:
+      - docker buildx build ./exporter --builder {{.BUILDER}} --network host --pull --platform {{.PLATFORMS}} --tag {{.CANDIDATE_EXPORTER}} --push
+
   build:
-    desc: Build both images
-    deps: ["build:vanilla", "build:tshock"]
+    desc: Build all images
+    deps: ["build:vanilla", "build:tshock", "build:exporter"]
 
   test:vanilla:
     desc: Build and test the vanilla image on every platform, then the Helm chart
@@ -87,7 +95,7 @@ tasks:
       - for: { var: PLATFORMS, split: ',' }
         cmd: |
           docker pull --platform {{.ITEM}} {{.CANDIDATE_VANILLA}} >/dev/null
-          pytest tests --ignore=tests/test_chart.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla --platform {{.ITEM}} {{.CLI_ARGS}}
+          pytest tests --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla --platform {{.ITEM}} {{.CLI_ARGS}}
       - docker pull {{.CANDIDATE_VANILLA}} >/dev/null
       - pytest tests/test_chart.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla {{.CLI_ARGS}}
 
@@ -98,15 +106,22 @@ tasks:
       - for: { var: PLATFORMS, split: ',' }
         cmd: |
           docker pull --platform {{.ITEM}} {{.CANDIDATE_TSHOCK}} >/dev/null
-          pytest tests --ignore=tests/test_chart.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock --platform {{.ITEM}} {{.CLI_ARGS}}
+          pytest tests --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock --platform {{.ITEM}} {{.CLI_ARGS}}
       - docker pull {{.CANDIDATE_TSHOCK}} >/dev/null
       - pytest tests/test_chart.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock {{.CLI_ARGS}}
 
+  test:exporter:
+    desc: Run the exporter unit tests (no container needed)
+    deps: [install]
+    cmds:
+      - pytest tests/test_exporter.py {{.CLI_ARGS}}
+
   test:
-    desc: Build and test both images
+    desc: Build and test everything (both images, the chart, and the exporter)
     cmds:
       - task: test:vanilla
       - task: test:tshock
+      - task: test:exporter
 
   publish:vanilla:
     desc: Build, test, then promote the tested vanilla manifest to Docker Hub (needs docker login)
@@ -132,11 +147,37 @@ tasks:
         --tag {{.IMAGE_REPO}}:tshock
         {{.CANDIDATE_TSHOCK}}
 
+  publish:exporter:
+    desc: Build, test, then push the exporter image to Docker Hub as latest
+    deps: [test:exporter, build:exporter]
+    cmds:
+      - docker buildx imagetools create --tag {{.EXPORTER_REPO}}:latest {{.CANDIDATE_EXPORTER}}
+
   clean:
     desc: Remove the throwaway build registry and builder
     cmds:
       - docker rm -f terraria-build-registry 2>/dev/null || true
       - docker buildx rm -f {{.BUILDER}} 2>/dev/null || true
+
+  fixture:world:
+    desc: Regenerate the exporter's .wld test fixture from the current vanilla image
+    cmds:
+      - docker buildx build --load -t terraria-server:fixture ./images/vanilla
+      - |
+        set -e
+        cid=$(docker run -d -e TEST_MODE=true terraria-server:fixture)
+        trap 'docker rm -f "$cid" >/dev/null 2>&1' EXIT
+        for i in $(seq 1 180); do docker logs "$cid" 2>&1 | grep -q "Server started" && break; sleep 1; done
+        docker cp "$cid:/terraria/.local/share/Terraria/Worlds/Terraria.wld" /tmp/terraria-fixture.wld
+        python3 - <<'PY'
+        import struct
+        d=open("/tmp/terraria-fixture.wld","rb").read()
+        o=4+7+1+4+8; n=struct.unpack_from("<h",d,o)[0]; o+=2
+        header_end=struct.unpack_from("<i",d,o+4)[0]   # pointers[1]
+        open("tests/fixtures/world.wld","wb").write(d[:header_end+16])
+        print("fixture refreshed:", header_end+16, "bytes, format", struct.unpack_from("<i",d,0)[0])
+        PY
+      - rm -f /tmp/terraria-fixture.wld
 
   lint:chart:
     desc: Lint the Helm chart
