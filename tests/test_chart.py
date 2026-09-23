@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -27,6 +28,7 @@ from terraria_client import KNOWN_PROTOCOLS, TerrariaClient, discover_protocol
 
 CHART_DIR = str(Path(__file__).resolve().parent.parent / "charts" / "terraria-server")
 PASSWORD = "chart-test-pw"
+SMALL_WORLD_CONFIG = "maxplayers=8\nport=7777\nsecure=1\nautocreate=1\ndifficulty=0\n"
 
 pytestmark = pytest.mark.chart
 
@@ -122,16 +124,23 @@ def deployment(request: pytest.FixtureRequest, kind_cluster):
     namespace = config.getoption("--namespace") or f"terraria-test-{uuid.uuid4().hex[:8]}"
     repository, _, tag = image.rpartition(":")
 
-    _run(
-        "helm", "--kube-context", kind_cluster["context"],
-        "upgrade", "--install", release, CHART_DIR,
-        "-n", namespace, "--create-namespace",
-        "--set", f"image.repository={repository}",
-        "--set", f"image.tag={tag}",
-        "--set", "image.pullPolicy=Never",
-        "--set", f"terraria.password.value={PASSWORD}",
-        timeout=180,
-    )
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as cfg:
+        cfg.write(SMALL_WORLD_CONFIG)
+        cfg_path = cfg.name
+    try:
+        _run(
+            "helm", "--kube-context", kind_cluster["context"],
+            "upgrade", "--install", release, CHART_DIR,
+            "-n", namespace, "--create-namespace",
+            "--set", f"image.repository={repository}",
+            "--set", f"image.tag={tag}",
+            "--set", "image.pullPolicy=Never",
+            "--set", f"terraria.password.value={PASSWORD}",
+            "--set-file", f"terraria.config={cfg_path}",
+            timeout=180,
+        )
+    finally:
+        Path(cfg_path).unlink(missing_ok=True)
     try:
         deploy = _kubectl("-n", namespace, "get", "deploy",
                       "-l", f"app.kubernetes.io/instance={release}", "-o", "name").stdout.strip()

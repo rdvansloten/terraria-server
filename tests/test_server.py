@@ -18,16 +18,19 @@ EXPECTED_UID = "999"
 CONNECT_PACKET = b"\x04\x00\x01\x00"
 
 
+@pytest.mark.portable
 def test_server_listens(server: Server) -> None:
     assert LISTENING_PATTERN in server.logs()
 
 
+@pytest.mark.portable
 def test_server_reports_terraria_version(server: Server) -> None:
     match = re.search(r"Terraria Server v(\d+\.\d+\.\d+(?:\.\d+)?)", server.logs())
     assert match, "no 'Terraria Server v<version>' line in logs"
     print(f"Terraria version: {match.group(1)}")
 
 
+@pytest.mark.portable
 def test_server_speaks_terraria_protocol(server: Server) -> None:
     last_error: Exception | None = None
     for _attempt in range(3):
@@ -44,11 +47,13 @@ def test_server_speaks_terraria_protocol(server: Server) -> None:
     pytest.fail(f"could not complete protocol handshake: {last_error}")
 
 
+@pytest.mark.portable
 def test_server_runs_as_terraria_user(server: Server) -> None:
     uid = server.exec("id", "-u").stdout.strip()
     assert uid == EXPECTED_UID, f"server runs as uid {uid}, expected {EXPECTED_UID}"
 
 
+@pytest.mark.portable
 def test_world_file_is_created(server: Server) -> None:
     deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
@@ -58,12 +63,14 @@ def test_world_file_is_created(server: Server) -> None:
     pytest.fail(f"world file {WORLD_PATH} was not written within 120s")
 
 
+@pytest.mark.portable
 def test_writable_paths_are_owned_by_server_user(server: Server) -> None:
     for path in (CONFIG_PATH, LOG_PATH, WORLD_PATH.rsplit("/", 1)[0]):
         owner = server.exec("stat", "-c", "%u", path).stdout.strip()
         assert owner == EXPECTED_UID, f"{path} is owned by uid {owner}, expected {EXPECTED_UID}"
 
 
+@pytest.mark.portable
 def test_no_startup_errors_in_logs(server: Server) -> None:
     logs = server.logs()
     for pattern in (
@@ -77,12 +84,14 @@ def test_no_startup_errors_in_logs(server: Server) -> None:
         assert not re.search(pattern, logs), f"found '{pattern}' in server logs"
 
 
+@pytest.mark.portable
 @pytest.mark.flavor("vanilla")
 def test_vanilla_uses_repository_serverconfig(server: Server) -> None:
     assert server.file_exists(f"{CONFIG_PATH}/serverconfig.txt")
     assert f"Config file   : {CONFIG_PATH}/serverconfig.txt" in server.logs()
 
 
+@pytest.mark.portable
 @pytest.mark.flavor("tshock")
 def test_tshock_plugin_is_running(server: Server) -> None:
     logs = server.logs()
@@ -90,12 +99,14 @@ def test_tshock_plugin_is_running(server: Server) -> None:
     assert "Plugin TShock" in logs and "initiated" in logs
 
 
+@pytest.mark.portable
 @pytest.mark.flavor("tshock")
 def test_tshock_writes_config_and_database(server: Server) -> None:
     for name in ("config.json", "sscconfig.json", "tshock.sqlite"):
         assert server.file_exists(f"{CONFIG_PATH}/{name}"), f"{name} missing from {CONFIG_PATH}"
 
 
+@pytest.mark.portable
 @pytest.mark.flavor("tshock")
 def test_tshock_writes_its_log_files(server: Server) -> None:
     """TShock keeps a timestamped log and TerrariaServerAPI writes ServerLog.txt; both must exist in"""

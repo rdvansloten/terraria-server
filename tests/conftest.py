@@ -51,6 +51,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "flavor(name): test only applies to the given image flavor")
     config.addinivalue_line("markers", "chart: Helm chart deployment test (needs --chart)")
+    config.addinivalue_line("markers", "portable: consumes the shared session world (no own world-gen); run on every architecture")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
