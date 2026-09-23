@@ -148,11 +148,10 @@ ownership, world creation and clean logs. The same suite runs in CI for all thre
 
 ## Automation
 
-- `build-vanilla.yaml` and `build-tshock.yaml` build every platform once into a registry on the runner,
-  test each platform from it, and push the tested manifest to Docker Hub only on `main`. Before the
-  push they also stand up a single-node kind cluster, install the Helm chart on a throwaway copy of
-  the image, and run `tests/test_chart.py`, which waits for the pod and drives the Terraria handshake
-  through a port-forward, so a broken chart or a server that will not serve in-cluster fails the run.
+- `build-vanilla.yaml`, `build-tshock.yaml` and `build-exporter.yaml` run the Taskfile via mise
+  (`mise exec -- task test:<flavor>` on pull requests, `task publish:<flavor>` on `main`), so CI and
+  local builds are the exact same steps: build multi-arch, test each platform, run the Helm chart on
+  a kind cluster, then push the tested image to Docker Hub only on `main`.
 - `renovate.yaml` runs self-hosted Renovate daily from the official image, authenticated as a
   GitHub App so its pull requests trigger the build workflows. It opens PRs for new Terraria server
   releases (via terraria.org's release list), TShock releases, base image digests and GitHub Actions

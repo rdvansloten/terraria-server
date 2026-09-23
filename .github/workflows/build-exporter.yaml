@@ -7,6 +7,8 @@ on:
       - exporter/**
       - tests/test_exporter.py
       - tests/fixtures/**
+      - Taskfile.yml
+      - mise.toml
       - .github/workflows/build-exporter.yaml
   push:
     branches:
@@ -15,12 +17,9 @@ on:
       - exporter/**
       - tests/test_exporter.py
       - tests/fixtures/**
+      - Taskfile.yml
+      - mise.toml
       - .github/workflows/build-exporter.yaml
-
-env:
-  REGISTRY: docker.io
-  REPOSITORY: rdvansloten/terraria-exporter
-  PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
 
 jobs:
   build-test-push:
@@ -31,54 +30,23 @@ jobs:
       - name: Checkout self
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.13'
-          cache: pip
-          cache-dependency-path: tests/requirements.txt
-
-      - name: Install test dependencies
-        run: pip install -r tests/requirements.txt
-
-      - name: Unit test the exporter
-        run: pytest tests/test_exporter.py
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-        with:
-          platforms: linux/amd64,linux/arm/v7,linux/arm64
+      - name: Set up mise
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-      - name: Build (no push) on pull requests
+      - name: Test
         if: github.ref != 'refs/heads/main'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: ./exporter
-          platforms: ${{ env.PLATFORMS }}
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: mise exec -- task test:exporter
 
       - name: Log in to Docker Hub
         if: github.ref == 'refs/heads/main'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
-          registry: ${{ env.REGISTRY }}
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push multi-arch image
+      - name: Build, test and publish
         if: github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: ./exporter
-          platforms: ${{ env.PLATFORMS }}
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:latest
-            ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: mise exec -- task publish:exporter
