@@ -6,6 +6,9 @@
 python = "3.13"
 task = "latest"
 uv = "latest"
+kind = "latest"
+kubectl = "latest"
+helm = "latest"
 
 [env]
 # Project-local virtualenv, created on first `mise install` / directory entry

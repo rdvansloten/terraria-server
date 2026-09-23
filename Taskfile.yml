@@ -147,6 +147,51 @@ tasks:
     cmds:
       - docker buildx imagetools create --tag {{.EXPORTER_REPO}}:latest {{.CANDIDATE_EXPORTER}}
 
+  dev:up:
+    desc: Spin up a kind cluster with a vanilla server on localhost:7777 and TShock on localhost:7778
+    cmds:
+      - |
+        set -e
+        cfg="$(mktemp)"
+        cat > "$cfg" <<'YAML'
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+          - role: control-plane
+            extraPortMappings:
+              - { containerPort: 30777, hostPort: 7777, protocol: TCP }
+              - { containerPort: 30778, hostPort: 7778, protocol: TCP }
+        YAML
+        kind create cluster --name terraria-dev --config "$cfg" --wait 60s
+        rm -f "$cfg"
+      - docker buildx build --load -t terraria-server:vanilla ./images/vanilla
+      - docker buildx build --load -t terraria-server:tshock ./images/tshock
+      - kind load docker-image terraria-server:vanilla --name terraria-dev
+      - kind load docker-image terraria-server:tshock --name terraria-dev
+      - >-
+        helm install vanilla charts/terraria-server -n terraria --create-namespace --kube-context kind-terraria-dev
+        --set image.repository=terraria-server --set image.tag=vanilla --set image.pullPolicy=Never
+        --set service.type=NodePort --set service.nodePort=30777 --set ingress.traefik.enabled=false
+        --set persistence.world.enabled=false --set persistence.config.enabled=false --set persistence.logs.enabled=false
+        --set terraria.password.enabled=false
+        --set resources.requests.memory=512Mi --set resources.requests.cpu=250m --wait --timeout 8m
+      - >-
+        helm install tshock charts/terraria-server -n terraria --kube-context kind-terraria-dev
+        --set image.repository=terraria-server --set image.tag=tshock --set image.pullPolicy=Never
+        --set service.type=NodePort --set service.nodePort=30778 --set ingress.traefik.enabled=false
+        --set persistence.world.enabled=false --set persistence.config.enabled=false --set persistence.logs.enabled=false
+        --set terraria.password.enabled=false
+        --set resources.requests.memory=512Mi --set resources.requests.cpu=250m --wait --timeout 8m
+      - 'echo "Ready. In Terraria: Multiplayer -> Join via IP -> 127.0.0.1"'
+      - 'echo "  Vanilla : 127.0.0.1 port 7777"'
+      - 'echo "  TShock  : 127.0.0.1 port 7778"'
+      - 'echo "No password set. Tear down with: task dev:down"'
+
+  dev:down:
+    desc: Delete the dev kind cluster
+    cmds:
+      - kind delete cluster --name terraria-dev
+
   clean:
     desc: Remove the throwaway build registry and builder
     cmds:
