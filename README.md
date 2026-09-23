@@ -1,37 +1,27 @@
 # terraria-server
 
+
 Terraria server Docker image and Helm chart for vanilla and TShock
 
 Images are published to [`docker.io/rdvansloten/terraria-server`](https://hub.docker.com/r/rdvansloten/terraria-server)
 for `linux/amd64`, `linux/arm64` and `linux/arm/v7`.
 
-| Flavor  | Directory                           | Tags                            | Notes                                                         |
-| ------- | ----------------------------------- | ------------------------------- | ------------------------------------------------------------- |
-| Vanilla | [`images/vanilla/`](images/vanilla) | `latest`, `vanilla`, `1458`, `1.4.5.8`, `1458-vanilla`, `1.4.5.8-vanilla` | Official dedicated server from terraria.org. The default flavor: unsuffixed tags are vanilla |
-| TShock  | [`images/tshock/`](images/tshock)   | `tshock`, `6.1.0-tshock`, `1456-tshock`, `1.4.5.6-tshock`                  | [TShock](https://github.com/Pryaxis/TShock) server on .NET 9. `<terraria version>-tshock` is the Terraria version that TShock release targets |
-
-Both images run as user `terraria` (uid/gid 999) with data under `/terraria`:
-
-| Path                                     | Purpose                                                                                       |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `/terraria/.local/share/Terraria/Worlds` | World files. Mount a volume here; `WORLD_FILENAME` selects the world (default `Terraria.wld`) |
-| `/terraria/config`                       | `serverconfig.txt` (vanilla) or TShock's `config.json`, `sscconfig.json` and `tshock.sqlite`  |
-| `/terraria/logs`                         | Server logs                                                                                   |
-| `/terraria/plugins`                      | Extra TShock plugins (TShock only)                                                            |
+| Flavor  | Directory                           | Tags                                                                      | Notes                                                                                                                                         |
+| ------- | ----------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| Vanilla | [`images/vanilla/`](images/vanilla) | `latest`, `vanilla`, `1458`, `1.4.5.8`, `1458-vanilla`, `1.4.5.8-vanilla` | Official dedicated server from terraria.org. The default flavor: unsuffixed tags are vanilla                                                  |
+| TShock  | [`images/tshock/`](images/tshock)   | `tshock`, `6.1.0-tshock`, `1456-tshock`, `1.4.5.6-tshock`                 | [TShock](https://github.com/Pryaxis/TShock) server on .NET 9. `<terraria version>-tshock` is the Terraria version that TShock release targets |     |
 
 When the world file does not exist yet, the server follows `autocreate=` in `serverconfig.txt`
 (the default config generates a medium world; `seed=`, `difficulty=` and `worldname=` apply to
 it). Remove `autocreate=` to make a missing world an error instead. A few environment variables
 adjust this without editing the config:
 
-| Variable                          | Effect                                                                                                                                         |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AUTOCREATE`, `SEED`, `DIFFICULTY` | Override the same settings from `serverconfig.txt`                                                                                            |
-| `WAIT_FOR_WORLD`                  | Wait until a world file is copied in (`kubectl cp`, or `docker exec -i <c> sh -c 'cat > <path>' < my.wld`), then start. Wins over autocreate   |
-| `TEST_MODE`                       | Small world with a random seed, used by the tests                                                                                              |
-| `TERRARIA_PASSWORD`               | Join password. Vanilla applies it via a private config copy on tmpfs; TShock writes it to `ServerPassword` in `config.json` (the only place it honors) |
-
-An existing world is never overwritten.
+| Variable                           | Effect                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AUTOCREATE`, `SEED`, `DIFFICULTY` | Override the same settings from `serverconfig.txt`                                                                                                     |
+| `WAIT_FOR_WORLD`                   | Wait until a world file is copied in (`kubectl cp`, or `docker exec -i <c> sh -c 'cat > <path>' < my.wld`), then start. Wins over autocreate           |
+| `TEST_MODE`                        | Small world with a random seed, used by the tests                                                                                                      |
+| `TERRARIA_PASSWORD`                | Join password. Vanilla applies it via a private config copy on tmpfs; TShock writes it to `ServerPassword` in `config.json` (the only place it honors) |
 
 ## Quick start
 
@@ -43,9 +33,8 @@ docker run -d -p 7777:7777 \
   rdvansloten/terraria-server:latest
 ```
 
-`MyWorld.wld` is generated on first start (a medium world, per the default config); mount a
-folder that already contains it to use an existing world. For TShock use the
-`tshock` tag; everything else is the same.
+`MyWorld.wld` is generated on first start. mount a folder that already contains it to use an existing world.
+For TShock use the `tshock` tag; everything else is the same.
 
 ### Hardened run
 
@@ -69,24 +58,16 @@ docker run -d -p 7777:7777 --read-only --cap-drop ALL --security-opt no-new-priv
 Both flavors keep their settings in the folder mounted at `/terraria/config`, and fill it on
 first start, so the flow is the same: start once, edit the files on the host, restart.
 
-| Flavor  | File                | Created on first start | Common settings                                                        |
-| ------- | ------------------- | ---------------------- | ---------------------------------------------------------------------- |
-| Vanilla | `serverconfig.txt`  | seeded from the image  | `password`, `maxplayers`, `motd`, `port`, `secure`, `language`         |
-| TShock  | `config.json`       | generated by TShock    | `ServerPassword`, `MaxSlots`, `ServerPort`, `RestApiEnabled`, and more |
-| TShock  | `serverconfig.txt`  | seeded from the image  | World generation only: `autocreate`, `difficulty`, `seed`, `worldname` |
-| TShock  | `sscconfig.json`    | generated by TShock    | Server-side characters                                                 |
-
-The server reads its config at startup only, so `docker restart <container>` applies changes.
-Files that already exist are never overwritten. On Linux hosts the mounted folder must be
-writable by uid 999 (`chown 999 <folder>`), otherwise the seed step is skipped with a warning
-and the server runs on built-in defaults.
-TShock also stores its database (`tshock.sqlite`: accounts, groups, bans) in this folder, which is
-why it must be a persistent volume. The Helm chart exposes the same files as `terraria.config`,
-`tshock.config` and `tshock.sscConfig`.
+| Flavor  | File               | Created on first start | Common settings                                                        |
+| ------- | ------------------ | ---------------------- | ---------------------------------------------------------------------- |
+| Vanilla | `serverconfig.txt` | Seeded from the image  | `password`, `maxplayers`, `motd`, `port`, `secure`, `language`         |
+| TShock  | `config.json`      | Generated by TShock    | `ServerPassword`, `MaxSlots`, `ServerPort`, `RestApiEnabled`, and more |
+| TShock  | `serverconfig.txt` | Seeded from the image  | World generation only: `autocreate`, `difficulty`, `seed`, `worldname` |
+| TShock  | `sscconfig.json`   | Generated by TShock    | Server-side characters                                                 |
 
 ## Logging
 
-Both servers write everything to stdout, so `docker logs` and any Kubernetes log collector
+Both images write everything to stdout, so `docker logs` and any Kubernetes log collector
 (Promtail, Alloy, an OpenTelemetry collector) pick it up without extra configuration. Vanilla
 writes nothing to `/terraria/logs` except crash dumps. TShock additionally keeps a timestamped copy
 of the same lines there, plus the API layer's `ServerLog.txt` with startup details, so the logs
@@ -101,71 +82,26 @@ flavors) and optionally tails the server log for live player and event activity.
 chart with `metrics.enabled=true`, and `metrics.serviceMonitor.enabled=true` if you run the
 Prometheus Operator.
 
-World metrics come from the `.wld` header, parsed with a version-aware reader (field order mirrors
-TEdit) that reads the stable backup and retries up to 10 times to avoid a torn read mid-save. It
-emits `terraria_world_parse_ok` so a future format change fails safe instead of reporting wrong
-values. Identity (name, seed, game/format/worldgen version) is exposed as labels on
-`terraria_world_info`; progression as `terraria_boss_defeated{boss}`,
-`terraria_invasion_defeated{invasion}` and `terraria_npc_saved{npc}`; plus `terraria_hardmode`,
-`terraria_difficulty`, `terraria_altars_smashed`, and file/health gauges. Live log-derived metrics
-include players online, joins, leaves, deaths, world saves, login attempts by status, and
-boss/invasion start events.
-
-The full boss set is covered, including the endgame (Moon Lord, Duke Fishron, the celestial pillars,
-Empress of Light, Queen Slime, Deerclops). The parser reads the entire world header and only trusts
-its flags when the parse lands exactly on the next section boundary, so a future format change fails
-safe via `terraria_world_parse_ok` rather than reporting wrong values.
-
-The parser's `.wld` test fixture is a 12KB world header at `tests/fixtures/world.wld`. When Terraria
-updates, refresh it with `task fixture:world`. You do not have to remember to: the test suite also
-parses a world generated by the current image (`test_current_image_world_parses_with_all_bosses`),
-so a format change from a Renovate Terraria bump fails CI and tells you the parser needs updating.
-
 ## Helm chart
 
 [`charts/terraria-server`](charts/terraria-server) deploys either image with persistent
-world, config and log volumes, and exposes the TCP port through a `LoadBalancer` Service,
-a Traefik `IngressRouteTCP` or ingress-nginx's `tcp-services` ConfigMap. See its README.
+world, config and log volumes, and exposes the TCP port through a `LoadBalancer` Service or
+Traefik `IngressRouteTCP`.
 
 ## Development
 
 Tooling is managed with [mise](https://mise.jdx.dev) and [Task](https://taskfile.dev):
 
 ```bash
-mise install          # python, task, uv and a project virtualenv
+mise install
 task --list
 
-task build:vanilla    # build an image for the local platform
-task test:tshock      # build and run the pytest suite against the image
-task test             # both flavors
-PLATFORM=linux/amd64 task test:vanilla   # emulated platform
-task test:vanilla -- -k protocol         # pass arguments to pytest
+task build:vanilla
+task test:tshock
+task test
+PLATFORM=linux/amd64 task test:vanilla
+task test:vanilla -- -k protocol
 ```
-
-The tests in [`tests/`](tests) are image-agnostic: they start the container in `TEST_MODE`,
-wait until it listens, then check the Terraria protocol handshake, the non-root user, file
-ownership, world creation and clean logs. The same suite runs in CI for all three platforms.
-
-## Automation
-
-- `build-vanilla.yaml`, `build-tshock.yaml` and `build-exporter.yaml` run the Taskfile via mise
-  (`mise exec -- task test:<flavor>` on pull requests, `task publish:<flavor>` on `main`), so CI and
-  local builds are the exact same steps: build multi-arch, test each platform, run the Helm chart on
-  a kind cluster, then push the tested image to Docker Hub only on `main`.
-- `renovate.yaml` runs self-hosted Renovate daily from the official image, authenticated as a
-  GitHub App so its pull requests trigger the build workflows. It opens PRs for new Terraria server
-  releases (via terraria.org's release list), TShock releases, base image digests and GitHub Actions
-  digests, and maintains a Dependency Dashboard issue listing pending and errored updates. Merging a
-  PR publishes the image. Repository rules are in `renovate.json`, credentials and identity in
-  `.github/renovate.config.js`.
-
-Required repository settings:
-
-| Name                                 | Kind     | Used by                                                                                               |
-| ------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------- |
-| `DOCKER_USERNAME`, `DOCKER_PASSWORD` | secrets  | Pushing images, authenticated Docker Hub lookups in Renovate                                          |
-| `RENOVATE_APP_ID`                    | variable | Client id of a GitHub App installed on the repo with Contents, Pull requests, Workflows and Issues read/write |
-| `RENOVATE_APP_PRIVATE_KEY`           | secret   | Private key of that app                                                                               |
 
 ## License
 
