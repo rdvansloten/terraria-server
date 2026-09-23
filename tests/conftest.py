@@ -38,6 +38,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "(docker, kind, helm, kubectl) are missing. By default they run when those are available "
         "and skip when they are not.",
     )
+    group.addoption("--exporter-image", default=None, help="Exporter image to run the container test against")
     group.addoption("--release", default="tt", help="Helm release name for the chart tests")
     group.addoption(
         "--namespace",
