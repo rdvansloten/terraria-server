@@ -10,7 +10,8 @@
     "dockerfile",
     "github-actions",
     "custom.regex",
-    "pip_requirements"
+    "pip_requirements",
+    "mise"
   ],
   "schedule": [
     "before 6am"
@@ -66,6 +67,13 @@
       ],
       "rangeStrategy": "pin",
       "groupName": "python test dependencies"
+    },
+    {
+      "description": "mise-managed dev tools",
+      "matchManagers": [
+        "mise"
+      ],
+      "groupName": "mise toolchain"
     }
   ],
   "customManagers": [
