@@ -15,6 +15,7 @@ vars:
   PLATFORMS: '{{.PLATFORMS | default "linux/amd64,linux/arm64,linux/arm/v7"}}'
   NATIVE_PLATFORM: '{{.NATIVE_PLATFORM | default "linux/amd64"}}'
   EMULATED_PLATFORMS: '{{.EMULATED_PLATFORMS | default "linux/arm64,linux/arm/v7"}}'
+  WORLD_CACHE: '{{.WORLD_CACHE | default ".world-cache"}}'
   CANDIDATE_VANILLA: '{{.BUILD_REGISTRY}}/terraria-server:candidate-vanilla'
   CANDIDATE_TSHOCK: '{{.BUILD_REGISTRY}}/terraria-server:candidate-tshock'
   EXPORTER_REPO: docker.io/rdvansloten/terraria-exporter
@@ -88,12 +89,13 @@ tasks:
     desc: Full suite on native arch, portable tests on emulated arches, then the Helm chart
     deps: [install, build:vanilla]
     cmds:
+      - rm -f {{.WORLD_CACHE}}/vanilla.wld
       - docker pull --platform {{.NATIVE_PLATFORM}} {{.CANDIDATE_VANILLA}} >/dev/null
-      - pytest tests --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla --platform {{.NATIVE_PLATFORM}} {{.CLI_ARGS}}
+      - pytest tests --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla --platform {{.NATIVE_PLATFORM}} --world-cache-dir {{.WORLD_CACHE}} {{.CLI_ARGS}}
       - for: { var: EMULATED_PLATFORMS, split: ',' }
         cmd: |
           docker pull --platform {{.ITEM}} {{.CANDIDATE_VANILLA}} >/dev/null
-          pytest tests -m portable --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla --platform {{.ITEM}} {{.CLI_ARGS}}
+          pytest tests -m portable --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla --platform {{.ITEM}} --world-cache-dir {{.WORLD_CACHE}} --startup-timeout 600 {{.CLI_ARGS}}
       - docker pull {{.CANDIDATE_VANILLA}} >/dev/null
       - pytest tests/test_chart.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla {{.CLI_ARGS}}
 
@@ -101,12 +103,13 @@ tasks:
     desc: Full suite on native arch, portable tests on emulated arches, then the Helm chart
     deps: [install, build:tshock]
     cmds:
+      - rm -f {{.WORLD_CACHE}}/tshock.wld
       - docker pull --platform {{.NATIVE_PLATFORM}} {{.CANDIDATE_TSHOCK}} >/dev/null
-      - pytest tests --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock --platform {{.NATIVE_PLATFORM}} {{.CLI_ARGS}}
+      - pytest tests --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock --platform {{.NATIVE_PLATFORM}} --world-cache-dir {{.WORLD_CACHE}} {{.CLI_ARGS}}
       - for: { var: EMULATED_PLATFORMS, split: ',' }
         cmd: |
           docker pull --platform {{.ITEM}} {{.CANDIDATE_TSHOCK}} >/dev/null
-          pytest tests -m portable --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock --platform {{.ITEM}} {{.CLI_ARGS}}
+          pytest tests -m portable --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock --platform {{.ITEM}} --world-cache-dir {{.WORLD_CACHE}} --startup-timeout 600 {{.CLI_ARGS}}
       - docker pull {{.CANDIDATE_TSHOCK}} >/dev/null
       - pytest tests/test_chart.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock {{.CLI_ARGS}}
 
@@ -207,6 +210,7 @@ tasks:
     cmds:
       - docker rm -f terraria-build-registry 2>/dev/null || true
       - docker buildx rm -f {{.BUILDER}} 2>/dev/null || true
+      - rm -rf {{.WORLD_CACHE}}
 
   fixture:world:
     desc: Regenerate the exporter's .wld test fixture from the current vanilla image

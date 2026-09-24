@@ -7,11 +7,14 @@ import subprocess
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
 SERVER_PORT = 7777
 LISTENING_PATTERN = "Listening on port 7777"
+WORLD_DIR_IN_CONTAINER = "/terraria/.local/share/Terraria/Worlds"
+WORLD_PATH_IN_CONTAINER = f"{WORLD_DIR_IN_CONTAINER}/Terraria.wld"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -24,6 +27,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Image flavor; enables flavor-specific tests (default: generic tests only)",
     )
     group.addoption("--platform", default=None, help="Docker platform, e.g. linux/amd64 (default: host)")
+    group.addoption(
+        "--world-cache-dir",
+        default="",
+        help="Directory used to cache a generated world: the session server saves its world here "
+        "on a cache miss and loads it on a hit, so emulated architectures load a world instead of "
+        "generating one (world-gen is prohibitively slow under QEMU)",
+    )
     group.addoption(
         "--startup-timeout",
         type=int,
@@ -153,22 +163,50 @@ def start_container(config: pytest.Config, env: dict[str, str], extra_args: list
     return Server(name=name, image=image, host=host, port=port)
 
 
+def _seed_world_volume(image: str, world_bytes: bytes) -> str:
+    """Create a docker volume holding the given world at the container's world path."""
+    volume = f"terraria-seed-{uuid.uuid4().hex[:8]}"
+    subprocess.run(["docker", "volume", "create", volume], check=True, capture_output=True)
+    subprocess.run(
+        ["docker", "run", "--rm", "-i", "-v", f"{volume}:{WORLD_DIR_IN_CONTAINER}",
+         "--entrypoint", "sh", image, "-c", f"cat > {WORLD_PATH_IN_CONTAINER}"],
+        input=world_bytes, check=True,
+    )
+    return volume
+
+
 @pytest.fixture(scope="session")
 def server(request: pytest.FixtureRequest) -> Server:
-    """A server started in TEST_MODE that has finished generating a world and is listening."""
+    """A server that has a world and is listening. Generates one (TEST_MODE), or, when
+    --world-cache-dir is set, loads a cached world on a hit and saves it on a miss so that
+    emulated architectures load instead of generating (world-gen times out under QEMU)."""
     timeout = request.config.getoption("--startup-timeout")
-    srv = start_container(request.config, {"TEST_MODE": "true"})
+    cache_dir = request.config.getoption("--world-cache-dir")
+    flavor = request.config.getoption("--flavor") or "default"
+    cache_file = Path(cache_dir) / f"{flavor}.wld" if cache_dir else None
+
+    volume: str | None = None
+    if cache_file and cache_file.is_file():
+        volume = _seed_world_volume(request.config.getoption("--image"), cache_file.read_bytes())
+        srv = start_container(request.config, {}, ["-v", f"{volume}:{WORLD_DIR_IN_CONTAINER}"])
+    else:
+        srv = start_container(request.config, {"TEST_MODE": "true"})
     try:
         if not srv.wait_for_log(re.escape(LISTENING_PATTERN), timeout):
             pytest.fail(
                 f"Server did not report '{LISTENING_PATTERN}' within {timeout}s "
                 f"(running={srv.is_running()}).\n--- container logs ---\n{srv.logs()}"
             )
+        if cache_file and not cache_file.is_file():
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_bytes(srv.read_file(WORLD_PATH_IN_CONTAINER))
         yield srv
     finally:
         if request.session.testsfailed:
             print(f"\n--- container logs ({srv.name}) ---\n{srv.logs()}")
         docker("rm", "-f", srv.name, check=False)
+        if volume:
+            subprocess.run(["docker", "volume", "rm", "-f", volume], check=False, capture_output=True)
 
 
 @pytest.fixture
