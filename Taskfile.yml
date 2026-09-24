@@ -1,0 +1,238 @@
+# https://taskfile.dev
+#
+#
+#   task test                                  # both images
+#   task build:tshock                          # build only
+
+version: '3'
+
+vars:
+  IMAGE_REPO: docker.io/rdvansloten/terraria-server
+  BUILD_REGISTRY: localhost:21500
+  # renovate: datasource=docker depName=library/registry
+  BUILD_REGISTRY_VERSION: 3.1.1
+  BUILDER: terraria
+  PLATFORMS: '{{.PLATFORMS | default "linux/amd64,linux/arm64,linux/arm/v7"}}'
+  NATIVE_PLATFORM: '{{.NATIVE_PLATFORM | default "linux/amd64"}}'
+  EMULATED_PLATFORMS: '{{.EMULATED_PLATFORMS | default "linux/arm64,linux/arm/v7"}}'
+  WORLD_CACHE: '{{.WORLD_CACHE | default ".world-cache"}}'
+  CANDIDATE_VANILLA: '{{.BUILD_REGISTRY}}/terraria-server:candidate-vanilla'
+  CANDIDATE_TSHOCK: '{{.BUILD_REGISTRY}}/terraria-server:candidate-tshock'
+  EXPORTER_REPO: docker.io/rdvansloten/terraria-exporter
+  CANDIDATE_EXPORTER: '{{.BUILD_REGISTRY}}/terraria-exporter:candidate'
+  VANILLA_VERSION:
+    sh: sed -nE 's/^ARG TERRARIA_SERVER_VERSION="([0-9]+)"/\1/p' images/vanilla/Dockerfile
+  VANILLA_DOTTED:
+    sh: sed -nE 's/^ARG TERRARIA_SERVER_VERSION="([0-9]+)"/\1/p' images/vanilla/Dockerfile | sed 's/./&./g; s/\.$//'
+  TSHOCK_VERSION:
+    sh: sed -nE 's/^ARG TSHOCK_VERSION="v?([0-9.]+)"/\1/p' images/tshock/Dockerfile
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  install:
+    desc: Install Python test dependencies into the mise-managed virtualenv
+    cmds:
+      - uv pip install --quiet -r tests/requirements.txt
+    status:
+      - python -c "import pytest"
+
+  registry:
+    desc: Start the throwaway build registry (internal)
+    internal: true
+    cmds:
+      - docker run --detach --name terraria-build-registry --publish 21500:5000 docker.io/library/registry:{{.BUILD_REGISTRY_VERSION}}
+      - until curl --silent --fail http://{{.BUILD_REGISTRY}}/v2/ >/dev/null; do sleep 1; done
+    status:
+      - docker ps --filter name=terraria-build-registry --filter status=running --quiet | grep -q .
+
+  builder:
+    desc: Create a buildx builder that can push to the insecure local registry (internal)
+    internal: true
+    cmds:
+      - |
+        tmp="$(mktemp)"
+        printf '[registry."%s"]\n  http = true\n' "{{.BUILD_REGISTRY}}" > "$tmp"
+        docker buildx create --name {{.BUILDER}} --driver docker-container \
+          --driver-opt network=host \
+          --buildkitd-flags '--allow-insecure-entitlement network.host' \
+          --buildkitd-config "$tmp"
+        rm -f "$tmp"
+    status:
+      - docker buildx inspect {{.BUILDER}} >/dev/null 2>&1
+
+  build:vanilla:
+    desc: Build the vanilla image multi-arch into the local registry
+    deps: [registry, builder]
+    cmds:
+      - docker buildx build ./images/vanilla --builder {{.BUILDER}} --network host --pull --platform {{.PLATFORMS}} --tag {{.CANDIDATE_VANILLA}} --push
+
+  build:tshock:
+    desc: Build the TShock image multi-arch into the local registry
+    deps: [registry, builder]
+    cmds:
+      - docker buildx build ./images/tshock --builder {{.BUILDER}} --network host --pull --platform {{.PLATFORMS}} --tag {{.CANDIDATE_TSHOCK}} --push
+
+  build:exporter:
+    desc: Build the metrics exporter image multi-arch into the local registry
+    deps: [registry, builder]
+    cmds:
+      - docker buildx build ./exporter --builder {{.BUILDER}} --network host --pull --platform {{.PLATFORMS}} --tag {{.CANDIDATE_EXPORTER}} --push
+
+  build:
+    desc: Build all images
+    deps: ["build:vanilla", "build:tshock", "build:exporter"]
+
+  test:vanilla:
+    desc: Full suite on native arch, portable tests on emulated arches, then the Helm chart
+    deps: [install, build:vanilla]
+    cmds:
+      - rm -f {{.WORLD_CACHE}}/vanilla.wld
+      - docker pull --platform {{.NATIVE_PLATFORM}} {{.CANDIDATE_VANILLA}} >/dev/null
+      - pytest tests --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla --platform {{.NATIVE_PLATFORM}} --world-cache-dir {{.WORLD_CACHE}} {{.CLI_ARGS}}
+      - for: { var: EMULATED_PLATFORMS, split: ',' }
+        cmd: |
+          docker pull --platform {{.ITEM}} {{.CANDIDATE_VANILLA}} >/dev/null
+          pytest tests -m portable --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla --platform {{.ITEM}} --world-cache-dir {{.WORLD_CACHE}} --startup-timeout 600 {{.CLI_ARGS}}
+      - docker pull {{.CANDIDATE_VANILLA}} >/dev/null
+      - pytest tests/test_chart.py --image {{.CANDIDATE_VANILLA}} --flavor vanilla {{.CLI_ARGS}}
+
+  test:tshock:
+    desc: Full suite on native arch, portable tests on emulated arches, then the Helm chart
+    deps: [install, build:tshock]
+    cmds:
+      - rm -f {{.WORLD_CACHE}}/tshock.wld
+      - docker pull --platform {{.NATIVE_PLATFORM}} {{.CANDIDATE_TSHOCK}} >/dev/null
+      - pytest tests --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock --platform {{.NATIVE_PLATFORM}} --world-cache-dir {{.WORLD_CACHE}} {{.CLI_ARGS}}
+      - for: { var: EMULATED_PLATFORMS, split: ',' }
+        cmd: |
+          docker pull --platform {{.ITEM}} {{.CANDIDATE_TSHOCK}} >/dev/null
+          pytest tests -m portable --ignore=tests/test_chart.py --ignore=tests/test_exporter.py --ignore=tests/test_exporter_image.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock --platform {{.ITEM}} --world-cache-dir {{.WORLD_CACHE}} --startup-timeout 600 {{.CLI_ARGS}}
+      - docker pull {{.CANDIDATE_TSHOCK}} >/dev/null
+      - pytest tests/test_chart.py --image {{.CANDIDATE_TSHOCK}} --flavor tshock {{.CLI_ARGS}}
+
+  test:exporter:
+    desc: Build and test the exporter image (unit tests, then the image on every platform)
+    deps: [install, build:exporter]
+    cmds:
+      - pytest tests/test_exporter.py {{.CLI_ARGS}}
+      - for: { var: PLATFORMS, split: ',' }
+        cmd: |
+          docker pull --platform {{.ITEM}} {{.CANDIDATE_EXPORTER}} >/dev/null
+          pytest tests/test_exporter_image.py --exporter-image {{.CANDIDATE_EXPORTER}} --platform {{.ITEM}} {{.CLI_ARGS}}
+
+  test:
+    desc: Build and test everything (both images, the chart, and the exporter)
+    cmds:
+      - task: test:vanilla
+      - task: test:tshock
+      - task: test:exporter
+
+  publish:vanilla:
+    desc: Build, test, then promote the tested vanilla manifest to Docker Hub (needs docker login)
+    deps: [test:vanilla]
+    cmds:
+      - >-
+        docker buildx imagetools create
+        --tag {{.IMAGE_REPO}}:{{.VANILLA_VERSION}}
+        --tag {{.IMAGE_REPO}}:{{.VANILLA_DOTTED}}
+        --tag {{.IMAGE_REPO}}:{{.VANILLA_VERSION}}-vanilla
+        --tag {{.IMAGE_REPO}}:{{.VANILLA_DOTTED}}-vanilla
+        --tag {{.IMAGE_REPO}}:vanilla
+        --tag {{.IMAGE_REPO}}:latest
+        {{.CANDIDATE_VANILLA}}
+
+  publish:tshock:
+    desc: Build, test, then promote the tested TShock manifest to Docker Hub (needs docker login)
+    deps: [test:tshock]
+    cmds:
+      - >-
+        docker buildx imagetools create
+        --tag {{.IMAGE_REPO}}:tshock-{{.TSHOCK_VERSION}}
+        --tag {{.IMAGE_REPO}}:tshock
+        {{.CANDIDATE_TSHOCK}}
+
+  publish:exporter:
+    desc: Build, test, then push the exporter image to Docker Hub as latest
+    deps: [test:exporter, build:exporter]
+    cmds:
+      - docker buildx imagetools create --tag {{.EXPORTER_REPO}}:latest {{.CANDIDATE_EXPORTER}}
+
+  dev:up:
+    desc: Spin up a kind cluster with a vanilla server on localhost:7777 and TShock on localhost:7778
+    cmds:
+      - |
+        set -e
+        cfg="$(mktemp)"
+        cat > "$cfg" <<'YAML'
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+          - role: control-plane
+            extraPortMappings:
+              - { containerPort: 30777, hostPort: 7777, protocol: TCP }
+              - { containerPort: 30778, hostPort: 7778, protocol: TCP }
+        YAML
+        kind create cluster --name terraria-dev --config "$cfg" --wait 60s
+        rm -f "$cfg"
+      - docker buildx build --load -t terraria-server:vanilla ./images/vanilla
+      - docker buildx build --load -t terraria-server:tshock ./images/tshock
+      - kind load docker-image terraria-server:vanilla --name terraria-dev
+      - kind load docker-image terraria-server:tshock --name terraria-dev
+      - >-
+        helm install vanilla charts/terraria-server -n terraria --create-namespace --kube-context kind-terraria-dev
+        --set image.repository=terraria-server --set image.tag=vanilla --set image.pullPolicy=Never
+        --set service.type=NodePort --set service.nodePort=30777 --set ingress.traefik.enabled=false
+        --set persistence.world.enabled=false --set persistence.config.enabled=false --set persistence.logs.enabled=false
+        --set terraria.password.enabled=false
+        --set resources.requests.memory=512Mi --set resources.requests.cpu=250m --wait --timeout 8m
+      - >-
+        helm install tshock charts/terraria-server -n terraria --kube-context kind-terraria-dev
+        --set image.repository=terraria-server --set image.tag=tshock --set image.pullPolicy=Never
+        --set service.type=NodePort --set service.nodePort=30778 --set ingress.traefik.enabled=false
+        --set persistence.world.enabled=false --set persistence.config.enabled=false --set persistence.logs.enabled=false
+        --set terraria.password.enabled=false
+        --set resources.requests.memory=512Mi --set resources.requests.cpu=250m --wait --timeout 8m
+      - 'echo "Ready. In Terraria: Multiplayer -> Join via IP -> 127.0.0.1"'
+      - 'echo "  Vanilla : 127.0.0.1 port 7777"'
+      - 'echo "  TShock  : 127.0.0.1 port 7778"'
+      - 'echo "No password set. Tear down with: task dev:down"'
+
+  dev:down:
+    desc: Delete the dev kind cluster
+    cmds:
+      - kind delete cluster --name terraria-dev
+
+  clean:
+    desc: Remove the throwaway build registry and builder
+    cmds:
+      - docker rm -f terraria-build-registry 2>/dev/null || true
+      - docker buildx rm -f {{.BUILDER}} 2>/dev/null || true
+      - rm -rf {{.WORLD_CACHE}}
+
+  fixture:world:
+    desc: Regenerate the exporter's .wld test fixture from the current vanilla image
+    cmds:
+      - docker buildx build --load -t terraria-server:fixture ./images/vanilla
+      - |
+        set -e
+        cid=$(docker run -d -e TEST_MODE=true terraria-server:fixture)
+        trap 'docker rm -f "$cid" >/dev/null 2>&1' EXIT
+        for i in $(seq 1 180); do docker logs "$cid" 2>&1 | grep -q "Server started" && break; sleep 1; done
+        docker cp "$cid:/terraria/.local/share/Terraria/Worlds/Terraria.wld" /tmp/terraria-fixture.wld
+        python3 - <<'PY'
+        import struct
+        d=open("/tmp/terraria-fixture.wld","rb").read()
+        o=4+7+1+4+8; n=struct.unpack_from("<h",d,o)[0]; o+=2
+        header_end=struct.unpack_from("<i",d,o+4)[0]   # pointers[1]
+        open("tests/fixtures/world.wld","wb").write(d[:header_end+16])
+        print("fixture refreshed:", header_end+16, "bytes, format", struct.unpack_from("<i",d,0)[0])
+        PY
+      - rm -f /tmp/terraria-fixture.wld
+
+  lint:chart:
+    desc: Lint the Helm chart
+    cmds:
+      - helm lint charts/terraria-server

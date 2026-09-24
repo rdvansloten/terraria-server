@@ -1,0 +1,82 @@
+{{- $fullname := include "terraria-server.fullname" . -}}
+{{- $disabled := list -}}
+{{- if not .Values.persistence.world.enabled }}{{ $disabled = append $disabled "world" }}{{ end -}}
+{{- if not .Values.persistence.config.enabled }}{{ $disabled = append $disabled "config" }}{{ end -}}
+{{- if not .Values.persistence.logs.enabled }}{{ $disabled = append $disabled "logs" }}{{ end -}}
+{{- if $disabled }}
+
+WARNING: persistence is disabled for {{ join ", " $disabled }}. These paths are emptyDir
+volumes and are wiped whenever the pod is recreated, including on helm upgrade:
+{{- if not .Values.persistence.world.enabled }}
+  /terraria/.local/share/Terraria/Worlds   world files
+{{- end }}
+{{- if not .Values.persistence.config.enabled }}
+  /terraria/config                         serverconfig.txt; for TShock also config.json and
+                                           tshock.sqlite (accounts, groups, bans, regions)
+{{- end }}
+{{- if not .Values.persistence.logs.enabled }}
+  /terraria/logs                           server logs
+{{- end }}
+Use this only for throwaway servers. Set persistence.<name>.enabled=true to keep data.
+{{- end }}
+
+Terraria server "{{ .Release.Name }}" deployed in namespace {{ .Release.Namespace }}.
+
+  Image:  {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+  World:  /terraria/.local/share/Terraria/Worlds/{{ .Values.terraria.world }}
+{{- if .Values.persistence.world.enabled }}
+  PVCs:   {{ $fullname }}-world{{ if .Values.persistence.config.enabled }}, {{ $fullname }}-config{{ end }}{{ if .Values.persistence.logs.enabled }}, {{ $fullname }}-logs{{ end }}
+{{- end }}
+
+{{- if .Values.terraria.waitForWorld }}
+
+The server is waiting for a world file (terraria.waitForWorld=true). Import yours with:
+
+  kubectl cp ./MyWorld.wld {{ .Release.Namespace }}/$(kubectl get pod -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/name={{ include "terraria-server.name" . }} -o jsonpath='{.items[0].metadata.name}'):/terraria/.local/share/Terraria/Worlds/{{ .Values.terraria.world }}
+
+The server starts as soon as the copy finishes. The world is on the persistent volume, so
+later restarts load it directly even with waitForWorld left on.
+{{- else }}
+
+If no world file exists the server follows autocreate= in serverconfig.txt (the default config
+generates a medium world). To import an existing world instead, install with
+terraria.waitForWorld=true and follow the printed kubectl cp command.
+{{- end }}
+
+{{- if .Values.terraria.password.enabled }}
+{{- if .Values.terraria.password.existingSecret }}
+
+Join password: taken from Secret "{{ .Values.terraria.password.existingSecret }}" (key: password).
+{{- else if .Release.IsInstall }}
+
+Join password (generated for this install, shown only now):
+
+  {{ include "terraria-server.password" . }}
+
+It lives in Secret "{{ include "terraria-server.passwordSecretName" . }}". Change it any time with
+
+  kubectl -n {{ .Release.Namespace }} create secret generic {{ include "terraria-server.passwordSecretName" . }} \
+    --from-literal=password='<new password>' --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n {{ .Release.Namespace }} rollout restart deploy/{{ include "terraria-server.fullname" . }}
+
+Upgrades keep whatever the Secret holds.
+{{- else }}
+
+Join password: unchanged, in Secret "{{ include "terraria-server.passwordSecretName" . }}".
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "terraria-server.passwordSecretName" . }} -o jsonpath='{.data.password}' | base64 -d
+{{- end }}
+{{- end }}
+
+Reach the server:
+{{- if eq .Values.service.type "LoadBalancer" }}
+  kubectl get svc -n {{ .Release.Namespace }} {{ $fullname }} -w   # wait for EXTERNAL-IP, connect on port {{ .Values.service.port }}
+{{- else if eq .Values.service.type "NodePort" }}
+  kubectl get svc -n {{ .Release.Namespace }} {{ $fullname }}      # connect to any node IP on the NodePort
+{{- else if .Values.ingress.traefik.enabled }}
+  via the Traefik TCP entrypoint "{{ .Values.ingress.traefik.entryPoint }}"
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ $fullname }} {{ .Values.service.port }}:{{ .Values.service.port }}
+{{- end }}
+
+Logs:
+  kubectl logs -n {{ .Release.Namespace }} deploy/{{ $fullname }} -f

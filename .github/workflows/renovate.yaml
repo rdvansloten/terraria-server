@@ -1,0 +1,79 @@
+name: Renovate
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: Log level
+        type: choice
+        options: [info, debug]
+        default: info
+      dryRun:
+        description: Dry run (no branches or PRs are created)
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+    paths:
+      - renovate.json
+      - .github/renovate.config.js
+      - .github/workflows/renovate.yaml
+
+env:
+  # renovate: datasource=docker depName=renovate/renovate
+  RENOVATE_VERSION: 44.93.7
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Get Renovate token
+        id: renovate_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RENOVATE_APP_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          # Least-privilege token: exactly what Renovate needs. metadata:read is implicit.
+          #   contents      commit update branches
+          #   pull-requests open and update the PRs
+          #   workflows     update pinned action digests under .github/workflows
+          #   issues        create and maintain the Dependency Dashboard (and config-warning issues)
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+          permission-issues: write
+
+      - name: Resolve the app's bot identity
+        id: identity
+        env:
+          GH_TOKEN: ${{ steps.renovate_token.outputs.token }}
+          APP_SLUG: ${{ steps.renovate_token.outputs.app-slug }}
+        run: |
+          user_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
+          echo "username=${APP_SLUG}[bot]" >> "$GITHUB_OUTPUT"
+          echo "git_author=${APP_SLUG}[bot] <${user_id}+${APP_SLUG}[bot]@users.noreply.github.com>" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout self
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@9fea9f0fbf80401026d11d03911d62b1f70fef1f # v46.3.3
+        with:
+          configurationFile: .github/renovate.config.js
+          renovate-version: ${{ env.RENOVATE_VERSION }}
+          token: "x-access-token:${{ steps.renovate_token.outputs.token }}"
+        env:
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+          RENOVATE_DRY_RUN: ${{ inputs.dryRun && 'full' || '' }}
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_USERNAME: ${{ steps.identity.outputs.username }}
+          RENOVATE_GIT_AUTHOR: ${{ steps.identity.outputs.git_author }}
+          RENOVATE_PR_HOURLY_LIMIT: 0
+          RENOVATE_PR_CONCURRENT_LIMIT: 0
+          RENOVATE_DOCKERHUB_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          RENOVATE_DOCKERHUB_TOKEN: ${{ secrets.DOCKER_PASSWORD }}

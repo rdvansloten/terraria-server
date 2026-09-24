@@ -1,0 +1,14 @@
+{{- $files := include "terraria-server.configFiles" . | fromYaml }}
+{{- if $files }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "terraria-server.fullname" . }}-config
+  labels:
+    {{- include "terraria-server.labels" . | nindent 4 }}
+data:
+  {{- range $name, $content := $files }}
+  {{ $name }}: |
+    {{- $content | nindent 4 }}
+  {{- end }}
+{{- end }}

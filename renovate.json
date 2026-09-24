@@ -1,0 +1,130 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests",
+    "customManagers:githubActionsVersions"
+  ],
+  "enabledManagers": [
+    "dockerfile",
+    "github-actions",
+    "custom.regex",
+    "pip_requirements",
+    "mise"
+  ],
+  "schedule": [
+    "before 6am"
+  ],
+  "timezone": "Europe/Amsterdam",
+  "labels": [
+    "dependencies"
+  ],
+  "packageRules": [
+    {
+      "description": "Debian base image: follow codename releases (digests are pinned for all images via docker:pinDigests)",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "debian"
+      ],
+      "versioning": "debian",
+      "groupName": "debian base image"
+    },
+    {
+      "description": "TShock releases: ignore pre-releases",
+      "matchDepNames": [
+        "Pryaxis/TShock"
+      ],
+      "ignoreUnstable": true
+    },
+    {
+      "description": "GitHub Actions: keep pinned to commit SHAs, group into one PR",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true,
+      "groupName": "github actions"
+    },
+    {
+      "description": ".NET runtime major follows TShock's requirement (currently net9.0), not Renovate",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "mcr.microsoft.com/dotnet/runtime"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Python test dependencies are pinned exactly so every release becomes a PR",
+      "matchManagers": [
+        "pip_requirements"
+      ],
+      "rangeStrategy": "pin",
+      "groupName": "python test dependencies"
+    },
+    {
+      "description": "mise-managed dev tools",
+      "matchManagers": [
+        "mise"
+      ],
+      "groupName": "mise toolchain"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Track TShock releases for ARG TSHOCK_VERSION in images/tshock/Dockerfile",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^images/tshock/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "ARG TSHOCK_VERSION=\"(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "Pryaxis/TShock",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "description": "Track Terraria dedicated server releases for ARG TERRARIA_SERVER_VERSION in images/vanilla/Dockerfile",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^images/vanilla/Dockerfile$/"
+      ],
+      "matchStrings": [
+        "ARG TERRARIA_SERVER_VERSION=\"(?<currentValue>\\d+)\""
+      ],
+      "depNameTemplate": "terraria-server",
+      "datasourceTemplate": "custom.terraria-server",
+      "versioningTemplate": "loose"
+    },
+    {
+      "description": "Fields in the Helm chart annotated with a '# renovate: datasource=... depName=...' comment on the line above (the field itself may be commented out; a -tshock suffix is ignored)",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^charts/[^/]+/(values|Chart)\\.yaml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z0-9.-]+) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[a-z0-9-]+))?\\s*\\n\\s*(?:# )?[A-Za-z]+: \"?(?<currentValue>[^\"\\s-]+)(?:-tshock)?\"?"
+      ]
+    }
+  ],
+  "customDatasources": {
+    "terraria-server": {
+      "defaultRegistryUrlTemplate": "https://terraria.org/api/get/dedicated-servers-names",
+      "format": "json",
+      "transformTemplates": [
+        "{ \"releases\": $map($, function($v) { { \"version\": $replace($v, /^terraria-server-(\\d+)\\.zip$/, \"$1\") } }), \"homepage\": \"https://terraria.org\", \"sourceUrl\": \"https://terraria.org/api/download/pc-dedicated-server\" }"
+      ]
+    }
+  },
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**"
+  ]
+}

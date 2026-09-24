@@ -1,0 +1,10 @@
+test/
+*cache*
+venv
+.venv
+.task/
+.DS_Store
+
+# world saves; the truncated test header is force-added
+*.wld
+!tests/fixtures/*.wld

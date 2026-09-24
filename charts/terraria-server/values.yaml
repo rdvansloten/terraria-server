@@ -1,0 +1,153 @@
+# Default values for terraria-server
+image:
+  repository: docker.io/rdvansloten/terraria-server
+  # Vanilla Terraria server (the default)
+  tag: "1458"
+  # tag: "6.1.0-tshock"
+  pullPolicy: Always
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# and the image, not by Terraria.
+terraria:
+  # World file name inside the world volume
+  world: "Terraria.wld"
+  port: 7777
+  password:
+    enabled: true
+    value: ""
+    existingSecret: ""
+  # volume the server starts normally.
+  waitForWorld: false
+  # config: |
+  #   # Max number of players allowed on the server, 1 to 255
+  #   maxplayers=8
+  #   port=7777
+  #   # Password required to join; leave empty for none
+  #   password=changeme
+  #   # Message of the day
+  #   motd=Welcome to Terraria!
+  #   # Additional cheat protection
+  #   secure=1
+  #   # Server language code
+  #   language=en-US
+  #   autocreate=2
+  #   # 0 Classic, 1 Expert, 2 Master, 3 Journey
+  #   difficulty=0
+  #   #seed=
+  config: ""
+
+# manage its own config.json / sscconfig.json.
+tshock:
+  # Contents of config.json
+  config: ""
+  # Contents of sscconfig.json (server side characters)
+  sscConfig: ""
+
+# Storage for world data, config, and logs.
+persistence:
+  # Global defaults for all PVCs.
+  storageClassName: ""
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+  # World data storage
+  world:
+    enabled: true
+    storageClassName: ""  # Uses global default if empty
+    accessModes: []       # Uses global default if empty
+    size: ""             # Uses global default if empty
+    annotations: {}
+    selector: {}
+    volumeName: ""
+
+  # Config storage
+  config:
+    enabled: true
+    storageClassName: ""
+    accessModes: []
+    size: ""
+    annotations: {}
+    selector: {}
+    volumeName: ""
+
+  # Logs storage
+  logs:
+    enabled: true
+    storageClassName: ""
+    accessModes: []
+    size: ""
+    annotations: {}
+    selector: {}
+    volumeName: ""
+
+# Ingress does not apply. Pick one:
+service:
+  type: ClusterIP
+  port: 7777
+  targetPort: 7777
+  nodePort: ""
+  annotations: {}
+  # Optional static IP for type LoadBalancer
+  loadBalancerIP: ""
+  externalTrafficPolicy: ""
+
+ingress:
+  traefik:
+    enabled: false
+    entryPoint: terraria
+    port: 7777
+
+#
+# extraObjects:
+#   - apiVersion: v1
+#     kind: ConfigMap
+#     metadata:
+#       name: tcp-services
+#       namespace: ingress-nginx
+#     data:
+extraObjects: []
+
+resources:
+  limits:
+    memory: 2Gi
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+
+podSecurityContext:
+  fsGroup: 999
+  seccompProfile:
+    type: RuntimeDefault
+
+# tmpfs mounts at /tmp and /terraria/.local/share/Terraria.
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsUser: 999
+  runAsNonRoot: true
+
+metrics:
+  enabled: false
+  image:
+    repository: docker.io/rdvansloten/terraria-exporter
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  port: 9150
+  tailLogs: true
+  serviceMonitor:
+    enabled: false          # needs the Prometheus Operator CRD
+    interval: 60s
+    scrapeTimeout: 30s
+    labels: {}              # extra labels so your Prometheus selects it
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

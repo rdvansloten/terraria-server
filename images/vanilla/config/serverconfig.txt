@@ -1,0 +1,33 @@
+# Terraria dedicated server configuration. The server reads this file at startup only.
+# Full reference: https://terraria.wiki.gg/wiki/Server#Server_config_file
+
+# Max number of players allowed on the server, 1 to 255
+maxplayers=8
+
+# Port the server listens on
+port=7777
+
+# Password required to join; leave empty for none
+password=
+
+# Message of the day
+motd=Welcome to Terraria!
+
+# Ban list, relative to the server working directory
+banlist=banlist.txt
+
+# Additional cheat protection
+secure=1
+
+# Server language code
+language=en-US
+
+# World generation, used only when the world file does not exist yet.
+# Size: 1 = small, 2 = medium, 3 = large. Remove or comment out to refuse to start without a world.
+autocreate=2
+# Difficulty: 0 = Classic, 1 = Expert, 2 = Master, 3 = Journey
+difficulty=0
+# Seed for the generated world (random when unset)
+#seed=
+# In-game world name (defaults to the world file name without .wld)
+#worldname=

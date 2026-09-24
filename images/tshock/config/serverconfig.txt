@@ -1,0 +1,11 @@
+# World generation settings for the TShock image, used only when the world file does not exist.
+# Everything else (password, max players, port, motd, ...) is configured in TShock's config.json.
+
+# Size: 1 = small, 2 = medium, 3 = large. Remove or comment out to refuse to start without a world.
+autocreate=2
+# Difficulty: 0 = Classic, 1 = Expert, 2 = Master, 3 = Journey
+difficulty=0
+# Seed for the generated world (random when unset)
+#seed=
+# In-game world name (defaults to the world file name without .wld)
+#worldname=

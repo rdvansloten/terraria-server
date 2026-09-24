@@ -1,0 +1,16 @@
+apiVersion: v2
+name: terraria-server
+description: A Helm chart for a Terraria dedicated server using the rdvansloten/terraria-server image
+type: application
+version: 0.2.0
+# renovate: datasource=custom.terraria-server depName=terraria-server versioning=loose
+appVersion: "1458"
+maintainers:
+  - name: Rudy van Sloten
+sources:
+  - https://github.com/rdvansloten/terraria-server
+  - https://hub.docker.com/r/rdvansloten/terraria-server
+keywords:
+  - terraria
+  - game
+  - server

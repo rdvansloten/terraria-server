@@ -1,0 +1,237 @@
+"""How the image obtains its world: autocreate, wait-for-import, and refusing to guess."""
+
+from __future__ import annotations
+
+import re
+import sys
+import time
+
+import pytest
+
+from conftest import LISTENING_PATTERN, Server, docker
+
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "exporter"))
+import terraria_wld  # noqa: E402
+
+WORLD_DIR = "/terraria/.local/share/Terraria/Worlds"
+WORLD_PATH = f"{WORLD_DIR}/Terraria.wld"
+
+
+@pytest.fixture
+def startup_timeout(request: pytest.FixtureRequest) -> int:
+    return request.config.getoption("--startup-timeout")
+
+
+def test_autocreate_generates_world_when_missing(run_server, startup_timeout: int) -> None:
+    """AUTOCREATE/SEED/DIFFICULTY from the environment generate a world when none exists."""
+    srv: Server = run_server({"AUTOCREATE": "1", "SEED": "12345", "DIFFICULTY": "0"})
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    logs = srv.logs()
+    assert "No existing world found. Creating world 'Terraria' (size 1, seed 12345, difficulty 0)." in logs
+    assert re.search(r"Creating world - Seed: 12345", logs)
+    assert srv.file_exists(WORLD_PATH)
+
+
+def _config_dir(tmp_path, content: str | None):
+    """A host folder to bind-mount at /terraria/config, optionally pre-filled with serverconfig.txt."""
+    import os
+    d = tmp_path / "config"
+    d.mkdir()
+    os.chmod(d, 0o777)
+    if content is not None:
+        (d / "serverconfig.txt").write_text(content)
+    return d
+
+
+def test_config_autocreate_settings_are_used(run_server, startup_timeout: int, tmp_path) -> None:
+    """autocreate/seed/difficulty/worldname from serverconfig.txt drive generation, no env needed."""
+    cfg = _config_dir(tmp_path, "autocreate=1\nseed=777\ndifficulty=1\nworldname=Config World\n")
+    srv: Server = run_server({}, ["-v", f"{cfg}:/terraria/config"])
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    logs = srv.logs()
+    assert "Creating world 'Config World' (size 1, seed 777, difficulty 1)." in logs
+    assert "Creating world - Seed: 777, Width: 4200" in logs
+    assert srv.file_exists(WORLD_PATH)
+
+
+def test_env_overrides_config(run_server, startup_timeout: int, tmp_path) -> None:
+    """Environment variables beat the same keys in serverconfig.txt."""
+    cfg = _config_dir(tmp_path, "autocreate=3\nseed=1\n")
+    srv: Server = run_server({"AUTOCREATE": "1", "SEED": "12345"}, ["-v", f"{cfg}:/terraria/config"])
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    assert "Creating world - Seed: 12345, Width: 4200" in srv.logs()
+
+
+def test_missing_world_without_autocreate_exits_with_error(run_server, tmp_path) -> None:
+    """Without autocreate the image refuses to start rather than silently creating a fresh world."""
+    cfg = _config_dir(tmp_path, "maxplayers=8\nport=7777\n")  # no autocreate=
+    srv: Server = run_server({}, ["-v", f"{cfg}:/terraria/config"])
+    assert srv.wait_for_exit(60), "container should have exited"
+    assert srv.exit_code() == 1
+    logs = srv.logs()
+    assert f"Error: No world file at '{WORLD_PATH}'" in logs
+    assert "autocreate=1|2|3" in logs and "WAIT_FOR_WORLD" in logs
+    assert LISTENING_PATTERN not in logs
+
+
+def test_invalid_autocreate_size_is_rejected(run_server) -> None:
+    """Only world sizes 1, 2 and 3 are accepted."""
+    srv: Server = run_server({"AUTOCREATE": "9"})
+    assert srv.wait_for_exit(60)
+    assert srv.exit_code() == 1
+    assert "AUTOCREATE must be 1 (small), 2 (medium) or 3 (large)" in srv.logs()
+
+
+def test_wait_for_world_then_import_starts_server(server: Server, run_server, startup_timeout: int) -> None:
+    """WAIT_FOR_WORLD keeps the container waiting (no autocreate), then starts with the world that"""
+    world = server.read_file(WORLD_PATH)
+    assert len(world) > 100_000, "session server world looks too small"
+
+    srv: Server = run_server({"WAIT_FOR_WORLD": "true", "AUTOCREATE": "2"})
+    assert srv.wait_for_log(re.escape(f"Waiting for world file: {WORLD_PATH}"), 60), srv.logs()
+    assert "kubectl cp" in srv.logs()
+    time.sleep(5)
+    assert srv.is_running(), "container should keep waiting"
+    assert LISTENING_PATTERN not in srv.logs(), "server must not start (or autocreate) while waiting"
+
+    srv.write_file(WORLD_PATH, world)
+
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    logs = srv.logs()
+    assert f"World file received ({len(world)} bytes)." in logs
+    assert f"Loading existing world: {WORLD_PATH}" in logs
+    assert "Creating world" not in logs, "imported world must be loaded, not regenerated"
+
+
+def test_existing_world_is_not_overwritten_by_autocreate(server: Server, run_server, startup_timeout: int) -> None:
+    """A world already present on the volume is loaded as-is, even with autocreate enabled."""
+    world = server.read_file(WORLD_PATH)
+    volume = f"terraria-test-{srv_id()}"
+    import subprocess
+    subprocess.run(["docker", "volume", "create", volume], check=True, capture_output=True)
+    try:
+        subprocess.run(
+            ["docker", "run", "--rm", "-i", "-v", f"{volume}:{WORLD_DIR}", "--entrypoint", "sh", server.image,
+             "-c", f"cat > {WORLD_PATH}"],
+            input=world, check=True,
+        )
+        srv: Server = run_server({"AUTOCREATE": "3"}, ["-v", f"{volume}:{WORLD_DIR}"])
+        assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+        logs = srv.logs()
+        assert f"Loading existing world: {WORLD_PATH}" in logs
+        assert "Creating world" not in logs
+        docker("rm", "-f", srv.name, check=False)
+    finally:
+        subprocess.run(["docker", "volume", "rm", "-f", volume], check=False, capture_output=True)
+
+
+def srv_id() -> str:
+    import uuid
+    return uuid.uuid4().hex[:8]
+
+
+def test_empty_config_folder_is_seeded_with_default(run_server, startup_timeout: int, tmp_path) -> None:
+    """Bind-mounting an empty host folder at /terraria/config (the README quick start) must not"""
+    config_dir = _config_dir(tmp_path, None)
+    srv: Server = run_server({"AUTOCREATE": "1"}, ["-v", f"{config_dir}:/terraria/config"])
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    assert "No serverconfig.txt found in /terraria/config, seeded the default." in srv.logs()
+    seeded = (config_dir / "serverconfig.txt").read_text()
+    assert "autocreate=2" in seeded
+
+
+def test_existing_config_is_not_overwritten(run_server, startup_timeout: int, tmp_path) -> None:
+    """Second start with a user-edited config: the file is used as-is."""
+    content = "maxplayers=3\nport=7777\nmotd=custom motd\nautocreate=1\n"
+    config_dir = _config_dir(tmp_path, content)
+    srv: Server = run_server({}, ["-v", f"{config_dir}:/terraria/config"])
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    assert "seeded the default" not in srv.logs()
+    assert (config_dir / "serverconfig.txt").read_text() == content
+
+
+from terraria_client import KNOWN_PROTOCOLS
+
+
+def _connect_reply(srv: Server) -> int:
+    """Complete a Terraria ConnectRequest with the server's protocol version and return the type of"""
+    import socket
+    import struct
+
+    match = re.search(r"Terraria Server v(\d+\.\d+\.\d+\.\d+)", srv.logs())
+    assert match, "server version not found in logs"
+    proto = KNOWN_PROTOCOLS.get(match.group(1))
+    assert proto, f"add Terraria {match.group(1)} to KNOWN_PROTOCOLS in {__file__}"
+    version = f"Terraria{proto}".encode()
+    packet = struct.pack("<HBB", 4 + len(version), 1, len(version)) + version
+    with socket.create_connection((srv.host, srv.port), timeout=5) as sock:
+        sock.sendall(packet)
+        reply = sock.recv(1024)
+    assert len(reply) >= 3, f"empty reply: {reply!r}"
+    assert reply[2] != 2, f"server rejected protocol version {proto}: {reply!r}"
+    return reply[2]
+
+
+@pytest.mark.portable
+def test_no_password_by_default(server: Server) -> None:
+    """The default config has an empty password: clients are told to continue connecting."""
+    assert "Join password : none" in server.logs()
+    assert _connect_reply(server) == 3  # both flavors answer ContinueConnecting here
+
+
+def test_password_env_is_enforced_without_touching_the_volume(request, run_server, startup_timeout: int, tmp_path) -> None:
+    """TERRARIA_PASSWORD makes the server demand a password and never appears in process"""
+    content = "autocreate=1\nseed=42\n"
+    cfg = _config_dir(tmp_path, content)
+    srv: Server = run_server({"TERRARIA_PASSWORD": "s3cret"}, ["-v", f"{cfg}:/terraria/config"])
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    assert "Join password : set from TERRARIA_PASSWORD" in srv.logs()
+    assert (cfg / "serverconfig.txt").read_text() == content, "serverconfig.txt on the volume must be untouched"
+    cmdlines = srv.exec("sh", "-c", "cat /proc/*/cmdline | tr '\\0' ' '").stdout
+    assert "s3cret" not in cmdlines, "password must not appear in process arguments"
+    if request.config.getoption("--flavor") == "tshock":
+        import json
+        assert json.loads((cfg / "config.json").read_text())["Settings"]["ServerPassword"] == "s3cret"
+    else:
+        assert _connect_reply(srv) == 37
+
+
+def test_runs_with_read_only_root_filesystem(request, run_server, startup_timeout: int, tmp_path) -> None:
+    """The hardened deployment: read-only root filesystem, all capabilities dropped, no privilege"""
+    cfg = _config_dir(tmp_path, None)
+    worlds = tmp_path / "worlds"
+    worlds.mkdir()
+    import os
+    os.chmod(worlds, 0o777)
+    srv: Server = run_server(
+        {"TEST_MODE": "true", "TERRARIA_PASSWORD": "pw"},
+        [
+            "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--tmpfs", "/tmp:uid=999,gid=999,mode=1777",
+            "--tmpfs", "/terraria/.local/share/Terraria:uid=999,gid=999",
+            "--tmpfs", "/terraria/logs:uid=999,gid=999",
+            "-v", f"{worlds}:/terraria/.local/share/Terraria/Worlds",
+            "-v", f"{cfg}:/terraria/config",
+        ],
+    )
+    assert srv.wait_for_log(re.escape(LISTENING_PATTERN), startup_timeout), srv.logs()
+    time.sleep(10)
+    assert srv.is_running(), srv.logs()
+    logs = srv.logs()
+    assert not re.search(r"Read-only file system|Exception|denied", logs), logs
+    assert (worlds / "Terraria.wld").exists()
+    if request.config.getoption("--flavor") == "vanilla":
+        assert _connect_reply(srv) == 37
+
+
+@pytest.mark.portable
+def test_current_image_world_parses_with_all_bosses(server: Server) -> None:
+    """Parse a world generated by the image under test. This ties the exporter's .wld parser to the"""
+    data = server.read_file(WORLD_PATH)
+    world = terraria_wld.parse_world_header(data)
+    assert world.parse_ok, (
+        f"the exporter could not align the {server.image} world header "
+        f"(format {world.version}); the .wld field order likely changed and terraria_wld.py needs updating"
+    )
+    for boss in ("moon_lord", "plantera", "golem", "duke_fishron", "deerclops"):
+        assert boss in world.bosses, f"{boss} missing from parsed bosses"

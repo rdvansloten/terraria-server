@@ -1,0 +1,200 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "terraria-server.fullname" . }}
+  labels:
+    {{- include "terraria-server.labels" . | nindent 4 }}
+spec:
+  strategy:
+      type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "terraria-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "terraria-server.selectorLabels" . | nindent 8 }}
+      {{- $files := include "terraria-server.configFiles" . | fromYaml }}
+      {{- if $files }}
+      annotations:
+        checksum/config: {{ $files | toYaml | sha256sum }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: config
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              {{- $files := include "terraria-server.configFiles" . | fromYaml }}
+              {{- range $name, $_ := $files }}
+              cp /values-config/{{ $name }} /config/{{ $name }} && echo "wrote {{ $name }} from values"
+              {{- end }}
+              if [ ! -f /config/serverconfig.txt ] && [ -f /terraria/config/serverconfig.txt ]; then
+                cp /terraria/config/serverconfig.txt /config/serverconfig.txt && echo "seeded default serverconfig.txt"
+              fi
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: terraria-config
+              mountPath: /config
+            {{- if $files }}
+            - name: values-config
+              mountPath: /values-config
+              readOnly: true
+            {{- end }}
+      {{- if .Values.persistence.world.enabled }}
+        - name: set-permissions
+          image: busybox
+          command: ["sh", "-c", "chown -R 999:999 /terraria/.local/share/Terraria/Worlds && chmod -R 770 /terraria/.local/share/Terraria/Worlds"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - name: terraria-world
+              mountPath: /terraria/.local/share/Terraria/Worlds
+      {{- end }}
+      containers:
+        - name: terraria
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: terraria
+              containerPort: {{ .Values.terraria.port }}
+              protocol: TCP
+          # keeps it there. Port 7777 -> hex 1E61; state 0A is LISTEN.
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - grep -qE ":$(printf '%04X' {{ .Values.terraria.port }}) [0-9A-F:]+ 0A " /proc/net/tcp /proc/net/tcp6
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - grep -qE ":$(printf '%04X' {{ .Values.terraria.port }}) [0-9A-F:]+ 0A " /proc/net/tcp /proc/net/tcp6
+            periodSeconds: 30
+            failureThreshold: 3
+          env:
+            - name: WORLD_FILENAME
+              value: "{{ .Values.terraria.world }}"
+            {{- if .Values.terraria.waitForWorld }}
+            - name: WAIT_FOR_WORLD
+              value: "true"
+            {{- end }}
+            {{- if .Values.terraria.password.enabled }}
+            - name: TERRARIA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "terraria-server.passwordSecretName" . }}
+                  key: password
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: terraria-data
+              mountPath: /terraria/.local/share/Terraria
+            - name: terraria-world
+              mountPath: /terraria/.local/share/Terraria/Worlds
+            - name: terraria-config
+              mountPath: /terraria/config
+            - name: terraria-logs
+              mountPath: /terraria/logs
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        {{- if .Values.metrics.enabled }}
+        - name: metrics
+          image: "{{ .Values.metrics.image.repository }}:{{ .Values.metrics.image.tag }}"
+          imagePullPolicy: {{ .Values.metrics.image.pullPolicy }}
+          env:
+            - name: WORLD_PATH
+              value: "/terraria/.local/share/Terraria/Worlds/{{ .Values.terraria.world }}"
+            - name: METRICS_PORT
+              value: "{{ .Values.metrics.port }}"
+            {{- if .Values.metrics.tailLogs }}
+            - name: LOG_DIR
+              value: "/terraria/logs"
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+          volumeMounts:
+            - name: terraria-world
+              mountPath: /terraria/.local/share/Terraria/Worlds
+              readOnly: true
+            {{- if .Values.metrics.tailLogs }}
+            - name: terraria-logs
+              mountPath: /terraria/logs
+              readOnly: true
+            {{- end }}
+        {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+        - name: terraria-data
+          emptyDir: {}
+        - name: terraria-world
+        {{- if .Values.persistence.world.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "terraria-server.fullname" . }}-world
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
+        - name: terraria-config
+        {{- if .Values.persistence.config.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "terraria-server.fullname" . }}-config
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
+        - name: terraria-logs
+        {{- if .Values.persistence.logs.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "terraria-server.fullname" . }}-logs
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
+        {{- if include "terraria-server.configFiles" . | fromYaml }}
+        - name: values-config
+          configMap:
+            name: {{ include "terraria-server.fullname" . }}-config
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
